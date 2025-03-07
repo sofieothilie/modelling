@@ -33,3 +33,5 @@ what spatial scale do we use ? I guess indices for the whole space => so dx = 1,
 - time step
 - output data (what do we want to see ?)
 - destroy memory
+
+->basically just copy the 2d example, in 3d, with updated formula
