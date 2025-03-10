@@ -6,8 +6,6 @@
 #include <math.h>
 #include <sys/time.h>
 
-#include "argument_utils.h"
-
 
 // Convert 'struct timeval' into seconds in double prec. floating point
 #define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)

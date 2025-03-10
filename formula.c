@@ -18,6 +18,8 @@ void timestep(int x, int y, int z){
 
     //dx,dy,dz == 1 for now
 
+    //wait why does the formula use the current value of other dims ?
+
     u1[x, y, z] = (dt*dt*((lambda + mu)*(u2[x - 1, y - 1, z] - u2[x - 1, y + 1, z] - u2[x + 1, y - 1, z] + u2[x + 1, y + 1, z]) 
                 + (lambda + mu)*(u3[x - 1, y, z - 1] - u3[x - 1, y, z + 1] - u3[x + 1, y, z - 1] + u3[x + 1, y, z + 1]) 
                 + 4*(lambda + 2*mu)*(-2*u1[x, y, z] + u1[x - 1, y, z] + u1[x + 1, y, z]) + 4*(-2*u1[x, y, z] + u1[x, y, z - 1] + u1[x, y, z + 1])*mu 
