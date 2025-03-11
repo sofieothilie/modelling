@@ -145,9 +145,12 @@ void domain_initialize (int_t n_x, int_t n_y, int_t n_z)//at this point I can lo
     Nz = n_z;
 
     //the simulation size is fixed, and resolution is a parameter. the resolution should make sense I guess
-    dx = (double)SIM_LX / Nx; 
-    dy = (double)SIM_LY / Ny;
-    dz = (double)SIM_LZ / Nz;
+    // dx = (double)SIM_LX / Nx; 
+    // dy = (double)SIM_LY / Ny;
+    // dz = (double)SIM_LZ / Nz;
+    dx = 0.001;
+    dy = 0.001;
+    dz = 0.001;
 
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
 
@@ -208,12 +211,14 @@ void time_step ( double t )
 {
 
     //emit sin from center, at each direction
-    double freq = 4;
-    double center_value = sin(2*M_PI*t*freq);
+    double freq = 10;
 
-    Ux(Nx/2,Ny/2,Nz/2) = center_value;
-    Uy(Nx/2,Ny/2,Nz/2) = center_value;
-    Uz(Nx/2,Ny/2,Nz/2) = center_value;
+    if(t < 1./freq){
+        double center_value = sin(2*M_PI*t*freq);
+        Ux(Nx/2,Ny/2,Nz/2) = center_value;
+        Uy(Nx/2,Ny/2,Nz/2) = center_value;
+        Uz(Nx/2,Ny/2,Nz/2) = center_value;
+    }
 
     #pragma omp parallel for collapse(3)
     for (int i = 0; i < Nx; i++) {
@@ -258,16 +263,26 @@ void time_step ( double t )
 // What shall we do ? nothing for now
 void boundary_condition ( void )
 {
-    // for ( int_t i=0; i<N; i++ )
-    // {
-    //     U(i,-1) = U(i,1);
-    //     U(i,N)  = U(i,N-2);
-    // }
-    // for ( int_t j=0; j<N; j++ )
-    // {
-    //     U(-1,j) = U(1,j);
-    //     U(M,j)  = U(M-2,j);
-    // }
+    #pragma omp parallel for collapse(2)
+    for (int y = 0; y < Ny; y++) {
+        for (int z = 0; z < Nz; z++) {
+            Ux_nxt(-1, y, z) = Ux_nxt(Nx, y, z) = 0.0;
+        }
+    }
+
+    #pragma omp parallel for collapse(2)
+    for (int x = 0; x < Nx; x++) {
+        for (int z = 0; z < Nz; z++) {
+            Ux_nxt(x, -1, z) = Ux_nxt(x, Ny, z) = 0.0;
+        }
+    }
+
+    #pragma omp parallel for collapse(2)
+    for (int x = 0; x < Nx; x++) {
+        for (int y = 0; y < Ny; y++) {
+            Ux_nxt(x, y, -1) = Ux_nxt(x, y, Nz) = 0.0;
+        }
+    }
 
 }
 
