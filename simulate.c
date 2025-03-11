@@ -148,9 +148,9 @@ void domain_initialize (int_t n_x, int_t n_y, int_t n_z)//at this point I can lo
     // dx = (double)SIM_LX / Nx; 
     // dy = (double)SIM_LY / Ny;
     // dz = (double)SIM_LZ / Nz;
-    dx = 0.001;
-    dy = 0.001;
-    dz = 0.001;
+    dx = 0.01;
+    dy = 0.01;
+    dz = 0.01;
 
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
 
@@ -212,12 +212,17 @@ void time_step ( double t )
 
     //emit sin from center, at each direction
     double freq = 10;
-
+    int n = 1;
     if(t < 1./freq){
         double center_value = sin(2*M_PI*t*freq);
-        Ux(Nx/2,Ny/2,Nz/2) = center_value;
-        Uy(Nx/2,Ny/2,Nz/2) = center_value;
-        Uz(Nx/2,Ny/2,Nz/2) = center_value;
+        for (int x = Nx/2 - n; x <= Nx/2+n; x++) {
+        for (int y = Ny/2 - n; y <= Ny/2+n; y++) {
+        for (int z = Nz/2 - n; z <= Nz/2+n; z++) {
+            Ux(Nx/2+x,Ny/2+y,Nz/2+z) = center_value;
+            Uy(Nx/2+x,Ny/2+y,Nz/2+z) = center_value;
+            Uz(Nx/2+x,Ny/2+y,Nz/2+z) = center_value;
+        }}}
+
     }
 
     #pragma omp parallel for collapse(3)

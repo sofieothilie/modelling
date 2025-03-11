@@ -12,4 +12,4 @@ print(np.shape(caprockDepth))
 
 res = (10,100,100)
 
-modeling.launch_model(caprockDepth, res, 0.000005, 8000, 20, 0.2)
+modeling.launch_model(caprockDepth, res, 0.0000001, 4000, 20, 0.2)
