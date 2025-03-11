@@ -24,8 +24,8 @@ help()
 #-----------------------------------------------------------------
 set -e
 
-M=50
-N=50
+M=100
+N=100
 
 # Check if the data folder is provided
 if [ $# -lt 1 ]; then
@@ -85,6 +85,9 @@ for DATAFILE in "$DATAFOLDER"/*.dat; do
         cat <<END_OF_SCRIPT | gnuplot -
         set term png
         set output "$IMAGEFILE"
+        set xlabel "X"
+        set ylabel "Y"
+        set zlabel "Z"
         set zrange[-1:1]
         splot "$DATAFILE" binary array=${SIZE_M}x${SIZE_N} format='%double' with pm3d
 END_OF_SCRIPT

@@ -13,14 +13,18 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
 
     PyArrayObject* model = NULL; // 3D array of media
     int Nx = 0, Ny = 0, Nz = 0;
+    double dt =0.001;
+    int max_iter=4000;
+    int snapshot_freq=20;
 
-    static char *kwlist[] = {"model", "res", NULL};
+    static char *kwlist[] = {"model", "res", "dt", "max_iter","snapshot_freq", NULL};
 
     printf("[DEBUG] Parsing arguments...\n");
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!(iii)|$", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!(iii)dii|$", kwlist,
                                      &PyArray_Type, &model,
-                                     &Nx, &Ny, &Nz))
+                                     &Nx, &Ny, &Nz,
+                                     &dt, &max_iter,&snapshot_freq))
     {
         printf("[ERROR] Illegal parameters passed to method\n");
         Py_RETURN_NONE;
@@ -66,7 +70,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     }
 
     printf("[DEBUG] Calling simulate function...\n");
-    simulate(model, Nx, Ny, Nz);
+    simulate(model, Nx, Ny, Nz, dt, max_iter, snapshot_freq);
     printf("[DEBUG] Simulation completed.\n");
 
     Py_RETURN_NONE;

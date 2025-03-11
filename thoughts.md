@@ -43,6 +43,8 @@ Then i can just check on the x-y dimension if my current z (depth) coordinate is
 So what do I need ? I need the height of the plastic model. and to determine what I have where
 
 
+
+
 ### code structure
 
 - init memory
@@ -54,8 +56,16 @@ So what do I need ? I need the height of the plastic model. and to determine wha
 
 ### optimization
 
-I can replace the model values by  the values of an enum, it would take less space and easier to understand
+/
 
 ### upgrades
 
 - add air over water,and take into account in simulation since wave can go out and come back
+
+### debugging
+
+I currently get a wave, looks correct for plastic, but weird for water. It seems to follow a specific dimension more, but I guess that's normal (yeah its probably normal),
+Here's my explanation, I apply a sine wave in all directions, but here I observe only the X axis, so its normal that I see more along X axis than others, it cant  spread as easily in other dimensions.
+
+
+- why does the center point moves at 2 places when res (10,40,100)

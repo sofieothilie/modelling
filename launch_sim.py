@@ -8,6 +8,6 @@ modelThickness = 0.2
 caprockDepth = data['zzz'] + modelThickness
 [nx,ny] = np.shape(caprockDepth)
 
-res = (1,50,50)
+res = (10,100,100)
 
-modeling.launch_model(caprockDepth, res)
+modeling.launch_model(caprockDepth, res, 0.001, 4000, 40)
