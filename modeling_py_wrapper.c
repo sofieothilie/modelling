@@ -17,14 +17,16 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     int max_iter=4000;
     int snapshot_freq=20;
 
-    static char *kwlist[] = {"model", "res", "dt", "max_iter","snapshot_freq", NULL};
+    double sensor_height=0.5;
+
+    static char *kwlist[] = {"model", "res", "dt", "max_iter","snapshot_freq", "sensor_height", NULL};
 
     printf("[DEBUG] Parsing arguments...\n");
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!(iii)dii|$", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!(iii)diid|$", kwlist,
                                      &PyArray_Type, &model,
                                      &Nx, &Ny, &Nz,
-                                     &dt, &max_iter,&snapshot_freq))
+                                     &dt, &max_iter,&snapshot_freq, &sensor_height))
     {
         printf("[ERROR] Illegal parameters passed to method\n");
         Py_RETURN_NONE;
@@ -70,7 +72,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     }
 
     printf("[DEBUG] Calling simulate function...\n");
-    simulate(model, Nx, Ny, Nz, dt, max_iter, snapshot_freq);
+    simulate(model, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1]);
     printf("[DEBUG] Simulation completed.\n");
 
     Py_RETURN_NONE;
