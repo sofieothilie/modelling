@@ -17,9 +17,9 @@
 
 //total size of simulation
 //5x1x1 cm tube of water
-#define SIM_LX 0.001
+#define SIM_LX 0.02
 #define SIM_LY 0.001 
-#define SIM_LZ 0.01//need to add height of sensors, but thats a parameter
+#define SIM_LZ 0.001//need to add height of sensors, but thats a parameter
 
 //source and receiver at start and end of tube
 #define SOURCE_X 0
@@ -190,9 +190,9 @@ void emit_signature(double t){
     //printf("emitting from %d,%d,%d\n", emit_i,emit_j,emit_k);
     //printf("siglen: %d\n", signature_len);
     //emit
-    //P(emit_i+1,emit_j,emit_k) = signature_wave[sig_idx];
+    P(emit_i+1,emit_j,emit_k) = signature_wave[sig_idx];
     // printf("emitting %lf\n", signature_wave[sig_idx]);
-    P(Nx/2,Ny/2,Nz/2) = signature_wave[sig_idx];
+    //P(Nx/2,Ny/2,Nz/2) = signature_wave[sig_idx];
 
     //P(emit_i,emit_j,emit_k) = 1;
     //P(Nx/2,Ny/2,Nz/2) = 1;

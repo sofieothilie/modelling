@@ -11,9 +11,9 @@ caprockDepth = data['zzz']
 
 print(np.shape(caprockDepth))
 
-res = (10,93,17)
+res = (200,10,10)
 dt = 1e-9
-n_steps = 1000
+n_steps = 40000
 snapshot_freq = 20
 sensor_height = 0.2
 
