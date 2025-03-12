@@ -20,22 +20,26 @@ double SIM_LX = MODEL_LX + 2*RESERVOIR_OFFSET;
 double SIM_LY = MODEL_LY + 2*RESERVOIR_OFFSET; 
 double SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET;//need to add height of sensors, but thats a parameter
 
+#define PADDING 3
+
 typedef struct {
     real_t lambda, mu, rho;
 } lame_parameters;
 
 
-lame_parameters WATER_LAME_PARAMETERS = {
-    .lambda = 2200,
-    .mu = 0,
-    .rho = 0.5
-};
+// lame_parameters WATER_LAME_PARAMETERS = {
+//     .lambda = 2200,
+//     .mu = 0,
+//     .rho = 0.5
+// };
 
-lame_parameters PLASTIC_LAME_PARAMETERS = {
-    .lambda = 1555.5555555556,
-    .mu = 666.6,
-    .rho = 0.5
-};
+// lame_parameters PLASTIC_LAME_PARAMETERS = {
+//     .lambda = 1555.5555555556,
+//     .mu = 666.6,
+//     .rho = 0.5
+// };
+#define WATER_K 1500
+#define PLASTIC_K 2270
 
 // lame_parameters params_at(real_t x, real_t y, real_t z);
 double K(int_t i, int_t j, int_t k);
@@ -81,9 +85,9 @@ real_t
     *buffers[3] = { NULL, NULL, NULL };
 
 //account for borders, (ghost values)
-#define P_prv(i,j,k) buffers[0][(i+1) * (Ny * Nz) + (j+1) * (Nz) + (k+1)]
-#define P(i,j,k)     buffers[1][(i+1) * (Ny * Nz) + (j+1) * (Nz) + (k+1)]
-#define P_nxt(i,j,k) buffers[2][(i+1) * (Ny * Nz) + (j+1) * (Nz) + (k+1)]
+#define P_prv(i,j,k) buffers[0][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
+#define P(i,j,k)     buffers[1][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
+#define P_nxt(i,j,k) buffers[2][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
 
 #define MODEL_AT(i,j) model[i * model_Ny + j];
 
@@ -131,17 +135,17 @@ void domain_initialize (int_t n_x, int_t n_y, int_t n_z)//at this point I can lo
     // dx = (double)SIM_LX / Nx; 
     // dy = (double)SIM_LY / Ny;
     // dz = (double)SIM_LZ / Nz;
-    dx = 0.01;
-    dy = 0.01;
-    dz = 0.01;
+    dx = 0.0001;
+    dy = 0.0001;
+    dz = 0.0001;
 
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
 
 
     //alloc memory
     for (int t = 0; t < 3; t++) {//for all time steps (prev, cur, next)
-        real_t *temp = calloc((Nx + 2) * (Ny + 2) * (Nz + 2), sizeof(real_t));
-        printf("alloced %d\n", (Nx + 2) * (Ny + 2) * (Nz + 2));
+        real_t *temp = calloc((Nx + 2*PADDING) * (Ny + 2*PADDING) * (Nz + 2*PADDING), sizeof(real_t));
+        printf("alloced %d\n", (Nx + 2*PADDING) * (Ny + 2*PADDING) * (Nz + 2*PADDING));
         if(temp == NULL){
             fprintf(stderr, "[ERROR] could not allocate enough memory for all buffers\n");
             exit(EXIT_FAILURE);
@@ -191,8 +195,8 @@ void time_step ( double t )
 {
 
     //emit sin from center, at each direction
-    double freq = 1;
-    int n = 5;
+    double freq = 1e6;//1MHz
+    int n = 1;
     if(t < 1./freq){
         double center_value = sin(2*M_PI*t*freq);
         for (int x = Nx/2 - n; x <= Nx/2+n; x++) {
@@ -201,8 +205,6 @@ void time_step ( double t )
             P(x,y,z) = center_value;
         }}}
         
-    P(Nx/2,Ny/2,Nz/2) = 1;
-
 
     }
 
@@ -219,10 +221,24 @@ void time_step ( double t )
         // double mu = p.mu;
         // double rho = p.rho;
 
+        // //1st
         // P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*((K(i, j, k - 1) - K(i, j, k + 1))*(K(i, j, k - 1) - K(i, j, k + 1))*P(i, j, k) + 2*(K(i, j, k - 1) - K(i, j, k + 1))*(P(i, j, k - 1) - P(i, j, k + 1))*K(i, j, k) + 4*(-2*K(i, j, k) + K(i, j, k - 1) + K(i, j, k + 1))*K(i, j, k)*P(i, j, k) + 2*(-2*P(i, j, k) + P(i, j, k - 1) + P(i, j, k + 1))*K(i, j, k)*K(i, j, k))
         //  + dx*dx*dz*dz*((K(i, j - 1, k) - K(i, j + 1, k))*(K(i, j - 1, k) - K(i, j + 1, k))*P(i, j, k) + 2*(K(i, j - 1, k) - K(i, j + 1, k))*(P(i, j - 1, k) - P(i, j + 1, k))*K(i, j, k) + 4*(-2*K(i, j, k) + K(i, j - 1, k) + K(i, j + 1, k))*K(i, j, k)*P(i, j, k) + 2*(-2*P(i, j, k) + P(i, j - 1, k) + P(i, j + 1, k))*K(i, j, k)*K(i, j, k)) 
         //  + dy*dy*dz*dz*((K(i - 1, j, k) - K(i + 1, j, k))*(K(i - 1, j, k) - K(i + 1, j, k))*P(i, j, k) + 2*(K(i - 1, j, k) - K(i + 1, j, k))*(P(i - 1, j, k) - P(i + 1, j, k))*K(i, j, k) + 4*(-2*K(i, j, k) + K(i - 1, j, k) + K(i + 1, j, k))*K(i, j, k)*P(i, j, k) + 2*(-2*P(i, j, k) + P(i - 1, j, k) + P(i + 1, j, k))*K(i, j, k)*K(i, j, k))) 
         //  + 2*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(2*dx*dx*dy*dy*dz*dz);
+
+        //2nd
+        
+        // P_nxt(x, y, z) = (dt*dt*(dx*dx*dy*dy*((K(x, y, z - 1) - K(x, y, z + 1))*(P(x, y, z - 1) - P(x, y, z + 1)) + 2*(-2*P(x, y, z) + P(x, y, z - 1) + P(x, y, z + 1))*K(x, y, z)) 
+        // + dx*dx*dz*dz*((K(x, y - 1, z) - K(x, y + 1, z))*(P(x, y - 1, z) - P(x, y + 1, z)) + 2*(-2*P(x, y, z) + P(x, y - 1, z) + P(x, y + 1, z))*K(x, y, z)) 
+        // + dy*dy*dz*dz*((K(x - 1, y, z) - K(x + 1, y, z))*(P(x - 1, y, z) - P(x + 1, y, z)) + 2*(-2*P(x, y, z) + P(x - 1, y, z) + P(x + 1, y, z))*K(x, y, z)))*K(x, y, z) 
+        // + 2*dx*dx*dy*dy*dz*dz*(2*P(x, y, z) - P_prv(x, y, z)))/(2*dx*dx*dy*dy*dz*dz);
+
+        //3nd
+        P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*(((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*P(i, j, k) + (P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3))*K(i, j, k))*(K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3)) + 2*((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*(P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3)) + 10*(-490*K(i, j, k) + 2*K(i, j, k - 3) - 27*K(i, j, k - 2) + 270*K(i, j, k - 1) + 270*K(i, j, k + 1) - 27*K(i, j, k + 2) + 2*K(i, j, k + 3))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j, k - 3) - 27*P(i, j, k - 2) + 270*P(i, j, k - 1) + 270*P(i, j, k + 1) - 27*P(i, j, k + 2) + 2*P(i, j, k + 3))*K(i, j, k))*K(i, j, k)) + dx*dx*dz*dz*(((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*P(i, j, k) + (P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k))*K(i, j, k))*(K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k)) + 2*((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*(P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k)) + 10*(-490*K(i, j, k) + 2*K(i, j - 3, k) - 27*K(i, j - 2, k) + 270*K(i, j - 1, k) + 270*K(i, j + 1, k) - 27*K(i, j + 2, k) + 2*K(i, j + 3, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j - 3, k) - 27*P(i, j - 2, k) + 270*P(i, j - 1, k) + 270*P(i, j + 1, k) - 27*P(i, j + 2, k) + 2*P(i, j + 3, k))*K(i, j, k))*K(i, j, k)) + dy*dy*dz*dz*(((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*P(i, j, k) + (P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k))*K(i, j, k))*(K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k)) + 2*((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*(P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k)) + 10*(-490*K(i, j, k) + 2*K(i - 3, j, k) - 27*K(i - 2, j, k) + 270*K(i - 1, j, k) + 270*K(i + 1, j, k) - 27*K(i + 2, j, k) + 2*K(i + 3, j, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i - 3, j, k) - 27*P(i - 2, j, k) + 270*P(i - 1, j, k) + 270*P(i + 1, j, k) - 27*P(i + 2, j, k) + 2*P(i + 3, j, k))*K(i, j, k))*K(i, j, k))) + 3600*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(3600*dx*dx*dy*dy*dz*dz);
+
+        // if(K(i,j,k) == PLASTIC_K)
+        //     P_nxt(i,j,k) = 1;
 
         // Ux_nxt(i, j, k) = (dt*dt*(4*dx*dx*dy*dy*(-2*Ux(i, j, k) + Ux(i, j, -1 + k) + Ux(i, j, 1 + k))*mu 
         //                 + 4*dx*dx*dz*dz*(-2*Ux(i, j, k) + Ux(i, -1 + j, k) + Ux(i, 1 + j, k))*mu 
@@ -291,8 +307,8 @@ void simulation_loop( void )
         }
 
         // Derive step t+1 from steps t and t-1
-        boundary_condition();
         time_step(iteration*dt);
+        boundary_condition();
 
         // Rotate the time step buffers
         move_buffer_window();
@@ -336,43 +352,6 @@ int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, double r_dt, i
 }
 
 
-lame_parameters params_at(real_t x, real_t y, real_t z){
-
-    //printf("x = %.4f, y = %.4f, z = %.4f\n", x, y, z);
-
-
-    //1. am I (xy) on the model ? 
-    if(RESERVOIR_OFFSET < x && x < MODEL_LX + RESERVOIR_OFFSET &&
-        RESERVOIR_OFFSET < y && y < MODEL_LY + RESERVOIR_OFFSET){
-        //yes!
-        //printf("on the model, z = %lf\n", z);
-
-        //2. am I IN the model ?
-
-        //figure out closest indices (approximated for now)
-        int_t x_idx = (int_t)((x - RESERVOIR_OFFSET) * (double)model_Nx / MODEL_LX);
-        int_t y_idx = (int_t)((y - RESERVOIR_OFFSET) * (double)model_Ny / MODEL_LY);
-
-
-        //model height at this point (assume RESERVOIR_OFFSET below model)
-        //model stores negative value of depth, so I invert it
-        real_t model_bottom = RESERVOIR_OFFSET - MODEL_AT(x_idx, y_idx);
-        //printf("min: %lf, max: %lf\n", model_bottom, RESERVOIR_OFFSET + MODEL_LZ);
-
-
-        if(model_bottom <= z && z < RESERVOIR_OFFSET + MODEL_LZ){
-            // printf("x = %lf, y = %lf, RESERVOIR_OFFSET = %lf, MODEL_LX = %lf, MODEL_LY = %lf, model_Nx = %d, model_Ny = %d\n", x, y, RESERVOIR_OFFSET, MODEL_LX, MODEL_LY, model_Nx, model_Ny);
-            printf("x_idx = %d, y_idx = %d\n", x_idx, y_idx);
-
-            //I am in the model !
-            //printf("in the model !\n");
-            return PLASTIC_LAME_PARAMETERS;
-        }
-    }
-
-    return WATER_LAME_PARAMETERS;
-}
-
 void show_model(){
 
     char filename[256];
@@ -399,9 +378,9 @@ void show_model(){
     for (int k = 0; k < Nz; k++) {
         for (int j = 0; j < Ny; j++) {
             for (int i = 0; i < Nx; i++) {
-                lame_parameters params = params_at(i*dx, j*dy, k*dz);
-                unsigned char in_model = (params.lambda == PLASTIC_LAME_PARAMETERS.lambda) ? 1 : 0;
-                fwrite(&in_model, sizeof(unsigned char), 1, out);
+                // lame_parameters params = params_at(i*dx, j*dy, k*dz);
+                // unsigned char in_model = (params.lambda == PLASTIC_LAME_PARAMETERS.lambda) ? 1 : 0;
+                // fwrite(&in_model, sizeof(unsigned char), 1, out);
             }
         }
     }
@@ -414,9 +393,22 @@ void show_model(){
 double K(int_t i, int_t j, int_t k){
 
     real_t x = i*dx, y=j*dy, z = k*dz;
+    // if(j < 60){
+    //     return WATER_K;
+    // }else if(j > 65){
+    //     return PLASTIC_K;
+    // }else{
+    //     double close_to_plastic = ((double)j - 60.)/5.;
+    //     return close_to_plastic * PLASTIC_K + (1-close_to_plastic)*WATER_K;
+    // }
+
+    //to test in smaller space
+    if(j > 60){
+        return PLASTIC_K;
+    }
+    return WATER_K;
 
     //printf("x = %.4f, y = %.4f, z = %.4f\n", x, y, z);
-    return 1000;
 
     //1. am I (xy) on the model ? 
     if(RESERVOIR_OFFSET < x && x < MODEL_LX + RESERVOIR_OFFSET &&
@@ -433,21 +425,21 @@ double K(int_t i, int_t j, int_t k){
 
         //model height at this point (assume RESERVOIR_OFFSET below model)
         //model stores negative value of depth, so I invert it
-        real_t model_bottom = RESERVOIR_OFFSET - MODEL_AT(x_idx, y_idx);
+        real_t model_bottom = RESERVOIR_OFFSET;// - MODEL_AT(x_idx, y_idx);
         //printf("min: %lf, max: %lf\n", model_bottom, RESERVOIR_OFFSET + MODEL_LZ);
 
 
         if(model_bottom <= z && z < RESERVOIR_OFFSET + MODEL_LZ){
             // printf("x = %lf, y = %lf, RESERVOIR_OFFSET = %lf, MODEL_LX = %lf, MODEL_LY = %lf, model_Nx = %d, model_Ny = %d\n", x, y, RESERVOIR_OFFSET, MODEL_LX, MODEL_LY, model_Nx, model_Ny);
-            printf("x_idx = %d, y_idx = %d\n", x_idx, y_idx);
+            //printf("x_idx = %d, y_idx = %d\n", x_idx, y_idx);
 
             //I am in the model !
             //printf("in the model !\n");
-            return 0;
+            return PLASTIC_K;
         }
         
     }
 
-    return 0;
+    return WATER_K;
 
 }
