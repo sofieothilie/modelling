@@ -7,8 +7,6 @@
 
 PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
 {
-    printf("[DEBUG] Entering modeling_py_wrapper\n");
-
     import_array();
 
     PyArrayObject* model = NULL; // 3D array of media
@@ -21,7 +19,6 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
 
     static char *kwlist[] = {"model", "res", "dt", "max_iter","snapshot_freq", "sensor_height", NULL};
 
-    printf("[DEBUG] Parsing arguments...\n");
 
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!(iii)diid|$", kwlist,
                                      &PyArray_Type, &model,
@@ -31,9 +28,6 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
         printf("[ERROR] Illegal parameters passed to method\n");
         Py_RETURN_NONE;
     }
-
-    printf("[DEBUG] Parsed arguments successfully.\n");
-    printf("[DEBUG] Model: %p, Nx: %d, Ny: %d, Nz: %d\n", model, Nx, Ny, Nz);
 
     if (!model) {
         printf("[ERROR] Model is NULL.\n");
@@ -55,7 +49,6 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
         return NULL;
     }
 
-    printf("[DEBUG] Model array is valid.\n");
 
     // Retrieve data pointer
     real_t* model_data = (real_t*)PyArray_DATA(model);
@@ -64,16 +57,12 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
         (size_t)PyArray_DIM(model, 1),
     };
 
-    printf("[DEBUG] Model dimensions: %zu x %zu\n", model_dims[0], model_dims[1]);
-
     if (!model_data) {
         printf("[ERROR] Model data pointer is NULL.\n");
         Py_RETURN_NONE;
     }
 
-    printf("[DEBUG] Calling simulate function...\n");
     simulate(model_data, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1]);
-    printf("[DEBUG] Simulation completed.\n");
 
     Py_RETURN_NONE;
 }
