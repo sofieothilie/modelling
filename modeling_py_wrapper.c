@@ -72,7 +72,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     }
 
     printf("[DEBUG] Calling simulate function...\n");
-    simulate(model, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1]);
+    simulate(model_data, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1]);
     printf("[DEBUG] Simulation completed.\n");
 
     Py_RETURN_NONE;

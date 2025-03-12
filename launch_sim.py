@@ -2,7 +2,7 @@ import numpy as np
 import scipy.io
 import modeling
 
-mat_file = '/home/guillaume/epfl/ntnu/bachelor/CO2-modeling/zzz.mat' # Desktop
+mat_file = './zzz.mat' # Desktop
 data = scipy.io.loadmat(mat_file)
 modelThickness = 0.2
 caprockDepth = data['zzz'] + modelThickness
