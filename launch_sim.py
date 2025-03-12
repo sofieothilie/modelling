@@ -10,7 +10,7 @@ caprockDepth = data['zzz']
 
 print(np.shape(caprockDepth))
 
-res = (400,200,1000)
+res = (10,100,100)
 dt = 1e-9
 n_steps = 5000
 snapshot_freq = 20

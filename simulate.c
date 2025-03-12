@@ -68,8 +68,6 @@ void move_buffer_window ( void )
 }
 
 
-
-
 // // Save the present time step in a numbered file under 'data/'
 void domain_save ( int_t step )
 {
@@ -94,9 +92,6 @@ void domain_save ( int_t step )
 void domain_initialize ()//at this point I can load an optional starting state. (I would need two steps actually)
 {
 
-
-
-
     //alloc memory
     for (int t = 0; t < 3; t++) {//for all time steps (prev, cur, next)
         real_t *temp = calloc((Nx + 2*PADDING) * (Ny + 2*PADDING) * (Nz + 2*PADDING), sizeof(real_t));
@@ -107,30 +102,7 @@ void domain_initialize ()//at this point I can load an optional starting state. 
         }
         buffers[t] = temp;
     }
-    
 
-    // for ( int_t i=0; i<M; i++ )
-    // {
-    //     for ( int_t j=0; j<N; j++ )
-    //     {
-    //         // Calculate delta (radial distance) adjusted for M x N grid
-    //         real_t delta = sqrt ( ((i - M/2.0) * (i - M/2.0)) / (real_t)M +
-    //                             ((j - N/2.0) * (j - N/2.0)) / (real_t)N );
-    //         U_prv(i,j) = U(i,j) = exp ( -4.0*delta*delta );
-    //     }
-    // }
-    //get some value in the center
-    // for (int x = Nx/2 - n; x < Nx/2+n; x++) {
-    // for (int y = Ny/2 - n; y < Ny/2+n; y++) {
-    // for (int z = Nz/2 - n; z < Nz/2+n; z++) {
-    //     Uy(x,y,z) = Uz(x,y,z) = 1;
-    //     Uy_prv(x,y,z) = Uz_prv(x,y,z) = 1;
-    // }}}
-
-    // Ux(Nx/2, Ny/2, Nz/2) =  Ux_prv(Nx/2, Ny/2, Nz/2) = 1;
-
-    // Set the time step for 2D case
-    // dt = dx*dy*dz / (c * sqrt (dx*dx+dy*dy));
 }
 
 
@@ -189,7 +161,7 @@ void time_step ( double t )
 }
 
 
-void boundary_condition ( void )
+void boundary_condition ( void )//TODO add rest of padding
 {
     #pragma omp parallel for collapse(2)
     for (int y = 0; y < Ny; y++) {
@@ -254,12 +226,12 @@ int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, double r_dt, i
     Nz = n_z;
 
     //the simulation size is fixed, and resolution is a parameter. the resolution should make sense I guess
-    dx = (double)SIM_LX / Nx; 
-    dy = (double)SIM_LY / Ny;
-    dz = (double)SIM_LZ / Nz;
-    // dx = 0.0001;//I'll need to make sure these are always small enough.
-    // dy = 0.0001;
-    // dz = 0.0001;
+    // dx = (double)SIM_LX / Nx; 
+    // dy = (double)SIM_LY / Ny;
+    // dz = (double)SIM_LZ / Nz;
+    dx = 0.0001;//I'll need to make sure these are always small enough.
+    dy = 0.0001;
+    dz = 0.0001;
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
 
 
@@ -274,8 +246,8 @@ int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, double r_dt, i
     struct timeval t_start, t_end;
 
     gettimeofday ( &t_start, NULL );
-    show_model();
-    //simulation_loop();
+    //show_model();
+    simulation_loop();
     gettimeofday ( &t_end, NULL );
 
     printf ( "Total elapsed time: %lf seconds\n",
@@ -329,10 +301,10 @@ double K(int_t i, int_t j, int_t k){
     // }
 
     //to test in smaller space
-    // if(j > 60){
-    //     return PLASTIC_K;
-    // }
-    // return WATER_K;
+    if(j > 60){
+        return PLASTIC_K;
+    }
+    return WATER_K;
 
     //printf("x = %.4f, y = %.4f, z = %.4f\n", x, y, z);
 
