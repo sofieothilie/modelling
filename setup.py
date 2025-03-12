@@ -6,7 +6,8 @@ module = Extension(
     'modeling',  # Module name
     sources=['simulate.c', 'modeling_py_wrapper.c', 'module_setup.c'],  # Source file(s)
     include_dirs=[numpy.get_include()],  # Include NumPy headers
-    extra_compile_args=['-std=c99'],  # Use C99 standard for compatibility
+    extra_compile_args=['-std=c99', '-fopenmp'],  # Use C99 standard for compatibility
+    extra_link_args = ["-fopenmp"]
 )
 
 # Setup function
