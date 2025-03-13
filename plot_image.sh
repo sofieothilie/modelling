@@ -24,8 +24,8 @@ help()
 #-----------------------------------------------------------------
 set -e
 
-M=100
-N=100
+M=93 # inner loop
+N=10 # outer loop
 
 # Check if the data folder is provided
 if [ $# -lt 1 ]; then

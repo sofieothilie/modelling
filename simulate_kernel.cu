@@ -9,16 +9,26 @@
 #include "modeling.h"
 
 
-#define MODEL_LX (double)3//length of model in meters
-#define MODEL_LY (double)1//width of model in meters
-#define MODEL_LZ 0.2//depth of model in centimeters
+// #define MODEL_LX (double)3//length of model in meters
+// #define MODEL_LY (double)1//width of model in meters
+// #define MODEL_LZ 0.2//depth of model in centimeters
 
 #define RESERVOIR_OFFSET .5//just water on each side of the reservoir
 
 //total size of simulation
-double SIM_LX = MODEL_LX + 2*RESERVOIR_OFFSET;
-double SIM_LY = MODEL_LY + 2*RESERVOIR_OFFSET; 
-double SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET;//need to add height of sensors, but thats a parameter
+//5x1x1 cm tube of water
+#define SIM_LX 0.002
+#define SIM_LY 0.001 
+#define SIM_LZ 0.001//need to add height of sensors, but thats a parameter
+
+//source and receiver at start and end of tube
+#define SOURCE_X 0
+#define SOURCE_Y SIM_LY / 2
+#define SOURCE_Z SIM_LZ / 2
+
+#define RECEIVER_X SIM_LX
+#define RECEIVER_Y SOURCE_X
+#define RECEIVER_Z SOURCE_Z
 
 #define PADDING 1
 
@@ -42,6 +52,10 @@ double sensor_height;
 int_t model_Nx, model_Ny;
 
 real_t* model;
+
+double* signature_wave;
+int signature_len;
+int sampling_freq;
 
 int_t Nx, Ny, Nz;//they must be parsed in the main before used anywhere, I guess that's a very bad way of doing it, but the template did it like this
 
@@ -97,11 +111,11 @@ void domain_save ( int_t step )
         printf("[ERROR] File pointer is NULL!\n");
         exit(EXIT_FAILURE);
     }
-    for ( int_t i=0; i<Ny; i++ )//take some slice 
+    for ( int_t i=0; i<Nx; i++ )//take some slice 
     {
-        fwrite ( &P(Nx/2,i,0), sizeof(real_t), Nz, out );//take horizontal slice from middle, around yz axis
+        for(int j =0; j<Ny; j++)
+        fwrite (&P(i,j,Nz/2), sizeof(real_t), 1, out );//take horizontal slice from middle, around yz axis
     }
-
     
     fclose ( out );
 }
@@ -210,26 +224,47 @@ __global__ void time_step ()
 
 void boundary_condition ( void )//TODO add rest of padding
 {
-    #pragma omp parallel for collapse(2)
-    for (int y = 0; y < Ny; y++) {
-        for (int z = 0; z < Nz; z++) {
-            P_nxt(-1, y, z) = P_nxt(Nx, y, z) = 0.0;
+// X boundaries (left and right)
+#pragma omp parallel for collapse(2)
+for (int y = -PADDING; y < Ny + PADDING; y++) {
+    for (int z = -PADDING; z < Nz + PADDING; z++) {
+        for (int p = 1; p <= PADDING; p++) {
+            // Extrapolate for left boundary (x = 0)
+            P_nxt(-p, y, z) = 3 * P_nxt(p - 1, y, z) - 3 * P_nxt(p, y, z) + P_nxt(p + 1, y, z);
+            
+            // Extrapolate for right boundary (x = Nx - 1)
+            P_nxt(Nx + p - 1, y, z) = 3 * P_nxt(Nx - p, y, z) - 3 * P_nxt(Nx - p - 1, y, z) + P_nxt(Nx - p - 2, y, z);
         }
     }
+}
 
-    #pragma omp parallel for collapse(2)
-    for (int x = 0; x < Nx; x++) {
-        for (int z = 0; z < Nz; z++) {
-            P_nxt(x, -1, z) = P_nxt(x, Ny, z) = 0.0;
+// Y boundaries (top and bottom)
+#pragma omp parallel for collapse(2)
+for (int x = -PADDING; x < Nx + PADDING; x++) {
+    for (int z = -PADDING; z < Nz + PADDING; z++) {
+        for (int p = 1; p <= PADDING; p++) {
+            // Extrapolate for bottom boundary (y = 0)
+            P_nxt(x, -p, z) = 3 * P_nxt(x, p - 1, z) - 3 * P_nxt(x, p, z) + P_nxt(x, p + 1, z);
+            
+            // Extrapolate for top boundary (y = Ny - 1)
+            P_nxt(x, Ny + p - 1, z) = 3 * P_nxt(x, Ny - p, z) - 3 * P_nxt(x, Ny - p - 1, z) + P_nxt(x, Ny - p - 2, z);
         }
     }
+}
 
-    #pragma omp parallel for collapse(2)
-    for (int x = 0; x < Nx; x++) {
-        for (int y = 0; y < Ny; y++) {
-            P_nxt(x, y, -1) = P_nxt(x, y, Nz) = 0.0;
+// Z boundaries (front and back)
+#pragma omp parallel for collapse(2)
+for (int x = -PADDING; x < Nx + PADDING; x++) {
+    for (int y = -PADDING; y < Ny + PADDING; y++) {
+        for (int p = 1; p <= PADDING; p++) {
+            // Extrapolate for front boundary (z = 0)
+            P_nxt(x, y, -p) = 3 * P_nxt(x, y, p - 1) - 3 * P_nxt(x, y, p) + P_nxt(x, y, p + 1);
+            
+            // Extrapolate for back boundary (z = Nz - 1)
+            P_nxt(x, y, Nz + p - 1) = 3 * P_nxt(x, y, Nz - p) - 3 * P_nxt(x, y, Nz - p - 1) + P_nxt(x, y, Nz - p - 2);
         }
     }
+}
 
 }
 
@@ -271,7 +306,11 @@ extern "C" int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, dou
     max_iteration = r_max_iter;
     snapshot_freq=r_snapshot_freq;
     sensor_height = r_sensor_height;
-    SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET + sensor_height;//need to add height of sensors, but thats a parameter
+    // SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET + sensor_height;//need to add height of sensors, but thats a parameter
+
+    signature_wave = sign;
+    signature_len = sign_len;
+    sampling_freq = fs;
 
     model_Nx = r_model_nx;
     model_Ny = r_model_ny;
@@ -279,6 +318,12 @@ extern "C" int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, dou
     Nx = n_x;
     Ny = n_y;
     Nz = n_z;
+    printf("opening recv file\n");
+    recv_file = fopen("receiver.dat", "wb");
+    if (!recv_file) {
+        printf("[ERROR] File pointer is NULL!\n");
+        exit(EXIT_FAILURE);
+    }
 
     //the simulation size is fixed, and resolution is a parameter. the resolution should make sense I guess
     // dx = (double)SIM_LX / Nx; 
@@ -313,6 +358,9 @@ extern "C" int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, dou
 
     // Clean up and shut down
     domain_finalize();
+    fclose(recv_file);
+    printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
+
     exit ( EXIT_SUCCESS );
 }
 
@@ -345,7 +393,8 @@ void show_model(){
 
 __device__ double K(int_t i, int_t j, int_t k){
 
-
+    //just water
+    return WATER_K;
 
     real_t x = i*dx, y=j*dy, z = k*dz;
     // if(j < 60){
@@ -366,37 +415,37 @@ __device__ double K(int_t i, int_t j, int_t k){
     //printf("x = %.4f, y = %.4f, z = %.4f\n", x, y, z);
 
     //1. am I (xy) on the model ? 
-    if(RESERVOIR_OFFSET < x && x < MODEL_LX + RESERVOIR_OFFSET &&
-        RESERVOIR_OFFSET < y && y < MODEL_LY + RESERVOIR_OFFSET){
-        //yes!
-        //printf("on the model, z = %lf\n", z);
+    // if(RESERVOIR_OFFSET < x && x < MODEL_LX + RESERVOIR_OFFSET &&
+    //     RESERVOIR_OFFSET < y && y < MODEL_LY + RESERVOIR_OFFSET){
+    //     //yes!
+    //     //printf("on the model, z = %lf\n", z);
 
-        //2. am I IN the model ?
+    //     //2. am I IN the model ?
 
-        //figure out closest indices (approximated for now)
-        int_t x_idx = (int_t)((x - RESERVOIR_OFFSET) * (double)model_Nx / MODEL_LX);
-        int_t y_idx = (int_t)((y - RESERVOIR_OFFSET) * (double)model_Ny / MODEL_LY);
-
-
-        //model height at this point (assume RESERVOIR_OFFSET below model)
-        //model stores negative value of depth, so I invert it
-        // if(MODEL_AT(x_idx, y_idx) != 0){
-        //     //printf("model value: %lf\n", MODEL_AT(x_idx, y_idx));
-        // }
-        real_t model_bottom = RESERVOIR_OFFSET - MODEL_AT(x_idx, y_idx);
-        //printf("min: %lf, max: %lf\n", model_bottom, RESERVOIR_OFFSET + MODEL_LZ);
+    //     //figure out closest indices (approximated for now)
+    //     int_t x_idx = (int_t)((x - RESERVOIR_OFFSET) * (double)model_Nx / MODEL_LX);
+    //     int_t y_idx = (int_t)((y - RESERVOIR_OFFSET) * (double)model_Ny / MODEL_LY);
 
 
-        if(model_bottom <= z && z < RESERVOIR_OFFSET + MODEL_LZ){
-            // printf("x = %lf, y = %lf, RESERVOIR_OFFSET = %lf, MODEL_LX = %lf, MODEL_LY = %lf, model_Nx = %d, model_Ny = %d\n", x, y, RESERVOIR_OFFSET, MODEL_LX, MODEL_LY, model_Nx, model_Ny);
-            //printf("x_idx = %d, y_idx = %d\n", x_idx, y_idx);
+    //     //model height at this point (assume RESERVOIR_OFFSET below model)
+    //     //model stores negative value of depth, so I invert it
+    //     // if(MODEL_AT(x_idx, y_idx) != 0){
+    //     //     //printf("model value: %lf\n", MODEL_AT(x_idx, y_idx));
+    //     // }
+    //     real_t model_bottom = RESERVOIR_OFFSET - MODEL_AT(x_idx, y_idx);
+    //     //printf("min: %lf, max: %lf\n", model_bottom, RESERVOIR_OFFSET + MODEL_LZ);
 
-            //I am in the model !
-            //printf("in the model !\n");
-            return PLASTIC_K;
-        }
+
+    //     // if(model_bottom <= z && z < RESERVOIR_OFFSET + MODEL_LZ){
+    //     //     // printf("x = %lf, y = %lf, RESERVOIR_OFFSET = %lf, MODEL_LX = %lf, MODEL_LY = %lf, model_Nx = %d, model_Ny = %d\n", x, y, RESERVOIR_OFFSET, MODEL_LX, MODEL_LY, model_Nx, model_Ny);
+    //     //     //printf("x_idx = %d, y_idx = %d\n", x_idx, y_idx);
+
+    //     //     //I am in the model !
+    //     //     //printf("in the model !\n");
+    //     //     return PLASTIC_K;
+    //     // }
         
-    }
+    // }
 
     return WATER_K;
 }
