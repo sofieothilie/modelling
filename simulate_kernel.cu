@@ -291,7 +291,7 @@ void simulation_loop( void )
         dim3 blockSize(block_x,block_y,block_z);
         dim3 gridSize((Nx + block_x - 1) / block_x, (Ny + block_y - 1) / block_y, (Nz + block_z - 1) / block_z);
 
-        time_step<<<<gridSize, blockSize>>>();
+        time_step<<<gridSize, blockSize>>>();
         boundary_condition<<<1,1>>>();//for now
 
         // Rotate the time step buffers
