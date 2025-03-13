@@ -17,7 +17,7 @@
 
 //total size of simulation
 //5x1x1 cm tube of water
-#define SIM_LX 0.02
+#define SIM_LX 0.002
 #define SIM_LY 0.001 
 #define SIM_LZ 0.001//need to add height of sensors, but thats a parameter
 
