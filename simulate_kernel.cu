@@ -1,11 +1,10 @@
 #define _XOPEN_SOURCE 600
+#define _USE_MATH_DEFINES
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
-#include <time.h>
-
 #include "modeling.h"
 
 
@@ -36,13 +35,11 @@
 #define PLASTIC_K 2270
 
 // lame_parameters params_at(real_t x, real_t y, real_t z);
-double K(int_t i, int_t j, int_t k);
+__device__ double K(int_t i, int_t j, int_t k);
 void show_model();
-static bool init_cuda()
+static bool init_cuda();
 
 
-// Convert 'struct timeval' into seconds in double prec. floating point
-#define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)
 
 int_t max_iteration;
 int_t snapshot_freq;
@@ -64,6 +61,7 @@ real_t dx,dy,dz;
 
 //first index is the dimension(xyz direction of vector), second is the time step
 // real_t *buffers[3] = { NULL, NULL, NULL };
+real_t *saved_buffer = NULL;
 
 
 #define MODEL_AT(i,j) model[i + j*model_Nx]
@@ -72,9 +70,9 @@ real_t dx,dy,dz;
 real_t* d_buffers[3] = {NULL, NULL, NULL};
 
 //account for borders, (PADDING: ghost values)
-#define d_P_prv(i,j,k) d_buffers[0][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
-#define d_P(i,j,k)     d_buffers[1][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
-#define d_P_nxt(i,j,k) d_buffers[2][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
+#define d_P_prv(i,j,k) d_buffers[0][(i+PADDING) * (d_Ny * d_Nz) + (j+PADDING) * (d_Nz) + (k+PADDING)]
+#define d_P(i,j,k)     d_buffers[1][(i+PADDING) * (d_Ny * d_Nz) + (j+PADDING) * (d_Nz) + (k+PADDING)]
+#define d_P_nxt(i,j,k) d_buffers[2][(i+PADDING) * (d_Ny * d_Nz) + (j+PADDING) * (d_Nz) + (k+PADDING)]
 
 __constant__ int_t d_Nx, d_Ny, d_Nz;
 __constant__ real_t d_dt, d_dx, d_dy, d_dz;
@@ -92,12 +90,12 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 
 // Rotate the time step buffers for each dimension
-void move_buffer_window ( void )
+__global__ void move_buffer_window ( void )
 {
-    real_t *temp = buffers[0];
-    buffers[0] = buffers[1];
-    buffers[1] = buffers[2];
-    buffers[2] = temp;
+    real_t *temp = d_buffers[0];
+    d_buffers[0] = d_buffers[1];
+    d_buffers[1] = d_buffers[2];
+    d_buffers[2] = temp;
 }
 
 
@@ -111,11 +109,17 @@ void domain_save ( int_t step )
         printf("[ERROR] File pointer is NULL!\n");
         exit(EXIT_FAILURE);
     }
-    for ( int_t i=0; i<Nx; i++ )//take some slice 
-    {
-        for(int j =0; j<Ny; j++)
-        fwrite (&P(i,j,Nz/2), sizeof(real_t), 1, out );//take horizontal slice from middle, around yz axis
-    }
+    // for ( int_t i=0; i<Nx; i++ )//take some slice 
+    // {
+    //     for(int j =0; j<Ny; j++)
+    //     fwrite (&P(i,j,Nz/2), sizeof(real_t), 1, out );//take horizontal slice from middle, around yz axis
+    // }
+
+    //cudaMemcpy2D() I can use that if I take other axis than YZ maybe ? not sure...
+    cudaMemcpy(saved_buffer, &d_P(Nx/2,0,0), Ny*Nz*sizeof(real_t), cudaMemcpyDeviceToHost);
+
+    fwrite (saved_buffer, sizeof(real_t), Ny*Nz, out);//take horizontal slice from middle, around yz axis
+
     
     fclose ( out );
 }
@@ -124,16 +128,24 @@ void domain_save ( int_t step )
 // Set up our three buffers, and fill two with an initial perturbation
 void domain_initialize ()//at this point I can load an optional starting state. (I would need two steps actually)
 {
+    //alloc cpu memory for saving image
+    //I take a YZ portion of the plane
+    saved_buffer = (real_t*)calloc(Ny*Nz, sizeof(real_t));
+    if(!saved_buffer){
+        fprintf(stderr, "[ERROR] could not allocate cpu memory\n");
+        exit(EXIT_FAILURE);
+    }
 
     // //alloc memory in GPU
-    cudaErrorCheck(cudaMalloc(&d_P_prv(0,0,0), sizeof(real_t) * Nx*Ny*Nz));
-    cudaErrorCheck(cudaMalloc(&d_P(0,0,0), sizeof(real_t) * Nx*Ny*Nz));
-    cudaErrorCheck(cudaMalloc(&d_P_nxt(0,0,0), sizeof(real_t) * Nx*Ny*Nz));
+    cudaErrorCheck(cudaMalloc(&d_buffers[0], sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING)));
+    cudaErrorCheck(cudaMalloc(&d_buffers[1], sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING)));
+    cudaErrorCheck(cudaMalloc(&d_buffers[2], sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING)));
 
     //set it all to 0
-    cudaErrorCheck(cudaMemSet(&d_P_prv(0,0,0), 0, Nx*Ny*Nz*sizeof(real_t)));
-    cudaErrorCheck(cudaMemSet(&d_P(0,0,0),     0, Nx*Ny*Nz*sizeof(real_t)));
-    cudaErrorCheck(cudaMemSet(&d_P_nxt(0,0,0), 0, Nx*Ny*Nz*sizeof(real_t)));
+    cudaErrorCheck(cudaMemset(&d_P_prv(0,0,0), 0, Nx*Ny*Nz*sizeof(real_t)));
+    cudaErrorCheck(cudaMemset(&d_P(0,0,0),     0, Nx*Ny*Nz*sizeof(real_t)));
+    cudaErrorCheck(cudaMemset(&d_P_nxt(0,0,0), 0, Nx*Ny*Nz*sizeof(real_t)));
+
 
 
 
@@ -168,7 +180,7 @@ void domain_initialize ()//at this point I can load an optional starting state. 
 void domain_finalize ( void )
 {
     for (int t = 0; t < 3; t++) {//for all time steps (prev, cur, next)
-        free(buffers[t]);
+        cudaFree(d_buffers[t]);
     }
 }
 
@@ -178,9 +190,9 @@ __global__ void emit_sine(double t){
     int n = 1;
     if(t < 1./freq){
         double center_value = sin(2*M_PI*t*freq);
-        for (int x = Nx/2 - n; x <= Nx/2+n; x++) {
-        for (int y = Ny/2 - n; y <= Ny/2+n; y++) {
-        for (int z = Nz/2 - n; z <= Nz/2+n; z++) {
+        for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
+        for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
+        for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
             d_P(x,y,z) = center_value;
         }}}
     }
@@ -192,12 +204,12 @@ __global__ void time_step ()
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    if(i >= device_Nx || j >= device_Ny || k >= device_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
+    if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
 
     #pragma omp parallel for collapse(3)
-    for (int i = 0; i < Nx; i++) {
-    for (int j = 0; j < Ny; j++) {
-    for (int k = 0; k < Nz; k++) {
+    for (int i = 0; i < d_Nx; i++) {
+    for (int j = 0; j < d_Ny; j++) {
+    for (int k = 0; k < d_Nz; k++) {
         //I am using ijk instead of xyz since it is the index, not the position anymore. position can be computed x = i*dx, etc.
 
         // //1st
@@ -208,10 +220,10 @@ __global__ void time_step ()
 
         //2nd: smaller stencil
         
-        P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*((K(i, j, k - 1) - K(i, j, k + 1))*(P(i, j, k - 1) - P(i, j, k + 1)) + 2*(-2*P(i, j, k) + P(i, j, k - 1) + P(i, j, k + 1))*K(i, j, k)) 
-        + dx*dx*dz*dz*((K(i, j - 1, k) - K(i, j + 1, k))*(P(i, j - 1, k) - P(i, j + 1, k)) + 2*(-2*P(i, j, k) + P(i, j - 1, k) + P(i, y + 1, k))*K(i, j, k)) 
-        + dy*dy*dz*dz*((K(i - 1, j, k) - K(i + 1, j, k))*(P(i - 1, j, k) - P(i + 1, j, k)) + 2*(-2*P(i, j, k) + P(i - 1, j, k) + P(i + 1, j, k))*K(i, j, k)))*K(i, j, k) 
-        + 2*dx*dx*dy*dy*dz*dz*(2*P(i,j,k) - P_prv(i,j,k)))/(2*dx*dx*dy*dy*dz*dz);
+        d_P_nxt(i, j, k) = (d_dt*d_dt*(d_dx*d_dx*d_dy*d_dy*((K(i, j, k - 1) - K(i, j, k + 1))*(d_P(i, j, k - 1) - d_P(i, j, k + 1)) + 2*(-2*d_P(i, j, k) + d_P(i, j, k - 1) + d_P(i, j, k + 1))*K(i, j, k)) 
+        + d_dx*d_dx*d_dz*d_dz*((K(i, j - 1, k) - K(i, j + 1, k))*(d_P(i, j - 1, k) - d_P(i, j + 1, k)) + 2*(-2*d_P(i, j, k) + d_P(i, j - 1, k) + d_P(i, j + 1, k))*K(i, j, k)) 
+        + d_dy*d_dy*d_dz*d_dz*((K(i - 1, j, k) - K(i + 1, j, k))*(d_P(i - 1, j, k) - d_P(i + 1, j, k)) + 2*(-2*d_P(i, j, k) + d_P(i - 1, j, k) + d_P(i + 1, j, k))*K(i, j, k)))*K(i, j, k) 
+        + 2*d_dx*d_dx*d_dy*d_dy*d_dz*d_dz*(2*d_P(i,j,k) - d_P_prv(i,j,k)))/(2*d_dx*d_dx*d_dy*d_dy*d_dz*d_dz);
 
         //3nd: larger stencil
         // P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*(((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*P(i, j, k) + (P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3))*K(i, j, k))*(K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3)) + 2*((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*(P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3)) + 10*(-490*K(i, j, k) + 2*K(i, j, k - 3) - 27*K(i, j, k - 2) + 270*K(i, j, k - 1) + 270*K(i, j, k + 1) - 27*K(i, j, k + 2) + 2*K(i, j, k + 3))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j, k - 3) - 27*P(i, j, k - 2) + 270*P(i, j, k - 1) + 270*P(i, j, k + 1) - 27*P(i, j, k + 2) + 2*P(i, j, k + 3))*K(i, j, k))*K(i, j, k)) + dx*dx*dz*dz*(((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*P(i, j, k) + (P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k))*K(i, j, k))*(K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k)) + 2*((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*(P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k)) + 10*(-490*K(i, j, k) + 2*K(i, j - 3, k) - 27*K(i, j - 2, k) + 270*K(i, j - 1, k) + 270*K(i, j + 1, k) - 27*K(i, j + 2, k) + 2*K(i, j + 3, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j - 3, k) - 27*P(i, j - 2, k) + 270*P(i, j - 1, k) + 270*P(i, j + 1, k) - 27*P(i, j + 2, k) + 2*P(i, j + 3, k))*K(i, j, k))*K(i, j, k)) + dy*dy*dz*dz*(((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*P(i, j, k) + (P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k))*K(i, j, k))*(K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k)) + 2*((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*(P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k)) + 10*(-490*K(i, j, k) + 2*K(i - 3, j, k) - 27*K(i - 2, j, k) + 270*K(i - 1, j, k) + 270*K(i + 1, j, k) - 27*K(i + 2, j, k) + 2*K(i + 3, j, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i - 3, j, k) - 27*P(i - 2, j, k) + 270*P(i - 1, j, k) + 270*P(i + 1, j, k) - 27*P(i + 2, j, k) + 2*P(i + 3, j, k))*K(i, j, k))*K(i, j, k))) + 3600*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(3600*dx*dx*dy*dy*dz*dz);
@@ -222,46 +234,46 @@ __global__ void time_step ()
 }
 
 
-void boundary_condition ( void )//TODO add rest of padding
+__global__ void boundary_condition ( void )//TODO add rest of padding
 {
 // X boundaries (left and right)
 #pragma omp parallel for collapse(2)
-for (int y = -PADDING; y < Ny + PADDING; y++) {
-    for (int z = -PADDING; z < Nz + PADDING; z++) {
+for (int y = -PADDING; y < d_Ny + PADDING; y++) {
+    for (int z = -PADDING; z < d_Nz + PADDING; z++) {
         for (int p = 1; p <= PADDING; p++) {
             // Extrapolate for left boundary (x = 0)
-            P_nxt(-p, y, z) = 3 * P_nxt(p - 1, y, z) - 3 * P_nxt(p, y, z) + P_nxt(p + 1, y, z);
+            d_P_nxt(-p, y, z) = 3 * d_P_nxt(p - 1, y, z) - 3 * d_P_nxt(p, y, z) + d_P_nxt(p + 1, y, z);
             
             // Extrapolate for right boundary (x = Nx - 1)
-            P_nxt(Nx + p - 1, y, z) = 3 * P_nxt(Nx - p, y, z) - 3 * P_nxt(Nx - p - 1, y, z) + P_nxt(Nx - p - 2, y, z);
+            d_P_nxt(d_Nx + p - 1, y, z) = 3 * d_P_nxt(d_Nx - p, y, z) - 3 * d_P_nxt(d_Nx - p - 1, y, z) + d_P_nxt(d_Nx - p - 2, y, z);
         }
     }
 }
 
 // Y boundaries (top and bottom)
 #pragma omp parallel for collapse(2)
-for (int x = -PADDING; x < Nx + PADDING; x++) {
-    for (int z = -PADDING; z < Nz + PADDING; z++) {
+for (int x = -PADDING; x < d_Nx + PADDING; x++) {
+    for (int z = -PADDING; z < d_Nz + PADDING; z++) {
         for (int p = 1; p <= PADDING; p++) {
             // Extrapolate for bottom boundary (y = 0)
-            P_nxt(x, -p, z) = 3 * P_nxt(x, p - 1, z) - 3 * P_nxt(x, p, z) + P_nxt(x, p + 1, z);
+            d_P_nxt(x, -p, z) = 3 * d_P_nxt(x, p - 1, z) - 3 * d_P_nxt(x, p, z) + d_P_nxt(x, p + 1, z);
             
-            // Extrapolate for top boundary (y = Ny - 1)
-            P_nxt(x, Ny + p - 1, z) = 3 * P_nxt(x, Ny - p, z) - 3 * P_nxt(x, Ny - p - 1, z) + P_nxt(x, Ny - p - 2, z);
+            // Extrapolate for top boundary (y = d_Ny - 1)
+            d_P_nxt(x, d_Ny + p - 1, z) = 3 * d_P_nxt(x, d_Ny - p, z) - 3 * d_P_nxt(x, d_Ny - p - 1, z) + d_P_nxt(x, d_Ny - p - 2, z);
         }
     }
 }
 
 // Z boundaries (front and back)
 #pragma omp parallel for collapse(2)
-for (int x = -PADDING; x < Nx + PADDING; x++) {
-    for (int y = -PADDING; y < Ny + PADDING; y++) {
+for (int x = -PADDING; x < d_Nx + PADDING; x++) {
+    for (int y = -PADDING; y < d_Ny + PADDING; y++) {
         for (int p = 1; p <= PADDING; p++) {
             // Extrapolate for front boundary (z = 0)
-            P_nxt(x, y, -p) = 3 * P_nxt(x, y, p - 1) - 3 * P_nxt(x, y, p) + P_nxt(x, y, p + 1);
+            d_P_nxt(x, y, -p) = 3 * d_P_nxt(x, y, p - 1) - 3 * d_P_nxt(x, y, p) + d_P_nxt(x, y, p + 1);
             
-            // Extrapolate for back boundary (z = Nz - 1)
-            P_nxt(x, y, Nz + p - 1) = 3 * P_nxt(x, y, Nz - p) - 3 * P_nxt(x, y, Nz - p - 1) + P_nxt(x, y, Nz - p - 2);
+            // Extrapolate for back boundary (z = d_Nz - 1)
+            d_P_nxt(x, y, d_Nz + p - 1) = 3 * d_P_nxt(x, y, d_Nz - p) - 3 * d_P_nxt(x, y, d_Nz - p - 1) + d_P_nxt(x, y, d_Nz - p - 2);
         }
     }
 }
@@ -295,7 +307,7 @@ void simulation_loop( void )
         boundary_condition<<<1,1>>>();//for now
 
         // Rotate the time step buffers
-        move_buffer_window();
+        move_buffer_window<<<1,1>>>();
     }
 }
 
@@ -308,9 +320,6 @@ extern "C" int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, dou
     sensor_height = r_sensor_height;
     // SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET + sensor_height;//need to add height of sensors, but thats a parameter
 
-    signature_wave = sign;
-    signature_len = sign_len;
-    sampling_freq = fs;
 
     model_Nx = r_model_nx;
     model_Ny = r_model_ny;
@@ -318,20 +327,16 @@ extern "C" int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, dou
     Nx = n_x;
     Ny = n_y;
     Nz = n_z;
-    printf("opening recv file\n");
-    recv_file = fopen("receiver.dat", "wb");
-    if (!recv_file) {
-        printf("[ERROR] File pointer is NULL!\n");
-        exit(EXIT_FAILURE);
-    }
+
+    
 
     //the simulation size is fixed, and resolution is a parameter. the resolution should make sense I guess
-    // dx = (double)SIM_LX / Nx; 
-    // dy = (double)SIM_LY / Ny;
-    // dz = (double)SIM_LZ / Nz;
-    dx = 0.0001;//I'll need to make sure these are always small enough.
-    dy = 0.0001;
-    dz = 0.0001;
+    dx = (double)SIM_LX / Nx; 
+    dy = (double)SIM_LY / Ny;
+    dz = (double)SIM_LZ / Nz;
+    // dx = 0.0001;//I'll need to make sure these are always small enough.
+    // dy = 0.0001;
+    // dz = 0.0001;
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
 
 
@@ -345,58 +350,24 @@ extern "C" int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, dou
     // Set up the initial state of the domain
     domain_initialize();
 
-    struct timeval t_start, t_end;
-
-    gettimeofday ( &t_start, NULL );
     //show_model();
     simulation_loop();
-    gettimeofday ( &t_end, NULL );
-
-    printf ( "Total elapsed time: %lf seconds\n",
-        WALLTIME(t_end) - WALLTIME(t_start)
-    );
 
     // Clean up and shut down
     domain_finalize();
-    fclose(recv_file);
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
 
     exit ( EXIT_SUCCESS );
 }
 
 
-void show_model(){
-
-    char filename[256];
-    sprintf ( filename, "model.dat" );
-    FILE *out = fopen ( filename, "wb" );
-    if (!out) {
-        printf("[ERROR] File pointer is NULL!\n");
-        exit(EXIT_FAILURE);
-    }
-
-
-    for (int k = 0; k < Nz; k++) {
-        for (int j = 0; j < Ny; j++) {
-            for (int i = 0; i < Nx; i++) {
-                double K_ = K(i, j, k);
-                unsigned char in_model = (K_ == PLASTIC_K) ? 1 : 0;
-                fwrite(&in_model, sizeof(unsigned char), 1, out);
-            }
-        }
-    }
-    printf("written to file\n");
-
-    fclose ( out );
-
-}
 
 __device__ double K(int_t i, int_t j, int_t k){
 
     //just water
     return WATER_K;
 
-    real_t x = i*dx, y=j*dy, z = k*dz;
+    real_t x = i*d_dx, y=j*d_dy, z = k*d_dz;
     // if(j < 60){
     //     return WATER_K;
     // }else if(j > 65){
