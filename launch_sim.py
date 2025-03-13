@@ -3,10 +3,10 @@ import scipy.io
 import modeling
 from scipy.io import loadmat
 
-res = (10,20,10)
-dt = 1e-9
-n_steps = 1000
-snapshot_freq = 20
+res = (500,500,50)
+dt = 3e-10
+n_steps = 15000
+snapshot_freq = 50
 sensor_height = 0.2
 
 def main():

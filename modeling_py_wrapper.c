@@ -4,6 +4,7 @@
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include <numpy/arrayobject.h>
 #include "modeling.h"
+#include "modeling_wrapper.h"
 
 PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
 {
@@ -70,7 +71,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
         Py_RETURN_NONE;
     }
 
-    simulate(model_data, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1], (double*)PyArray_DATA(signature_wave), PyArray_DIM(signature_wave, 0), fs);
+    simulate_wave(model_data, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1]);
 
     Py_RETURN_NONE;
 }

@@ -1,5 +1,11 @@
 from setuptools import setup, Extension
-import numpy, os
+import sys,os
+
+#append your numpy package, might not be necessary, but was for me
+sys.path.append('C:\\Users\\guill\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages')
+
+
+import numpy
 
 os.environ["CC"] = "cl"
 os.environ["CXX"] = "cl"

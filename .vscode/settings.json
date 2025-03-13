@@ -3,6 +3,7 @@
         "time.h": "c",
         "cstdint": "cpp",
         "modeling.h": "c",
-        "random": "c"
+        "random": "c",
+        "modeling_wrapper.h": "c"
     }
 }
