@@ -20,7 +20,7 @@ double SIM_LX = MODEL_LX + 2*RESERVOIR_OFFSET;
 double SIM_LY = MODEL_LY + 2*RESERVOIR_OFFSET; 
 double SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET;//need to add height of sensors, but thats a parameter
 
-#define PADDING 3
+#define PADDING 1
 
 #define WATER_K 1500
 #define PLASTIC_K 2270
@@ -28,6 +28,7 @@ double SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET;//need to add height of sensors, but
 // lame_parameters params_at(real_t x, real_t y, real_t z);
 double K(int_t i, int_t j, int_t k);
 void show_model();
+static bool init_cuda()
 
 
 // Convert 'struct timeval' into seconds in double prec. floating point
@@ -36,6 +37,7 @@ void show_model();
 int_t max_iteration;
 int_t snapshot_freq;
 double sensor_height;
+
 
 int_t model_Nx, model_Ny;
 
@@ -47,15 +49,32 @@ real_t dt;
 real_t dx,dy,dz;
 
 //first index is the dimension(xyz direction of vector), second is the time step
-real_t
-    *buffers[3] = { NULL, NULL, NULL };
+// real_t *buffers[3] = { NULL, NULL, NULL };
 
-//account for borders, (PADDING: ghost values)
-#define P_prv(i,j,k) buffers[0][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
-#define P(i,j,k)     buffers[1][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
-#define P_nxt(i,j,k) buffers[2][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
 
 #define MODEL_AT(i,j) model[i + j*model_Nx]
+
+//CUDA elements
+real_t* d_buffers[3] = {NULL, NULL, NULL};
+
+//account for borders, (PADDING: ghost values)
+#define d_P_prv(i,j,k) d_buffers[0][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
+#define d_P(i,j,k)     d_buffers[1][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
+#define d_P_nxt(i,j,k) d_buffers[2][(i+PADDING) * (Ny * Nz) + (j+PADDING) * (Nz) + (k+PADDING)]
+
+__constant__ int_t d_Nx, d_Ny, d_Nz;
+__constant__ real_t d_dt, d_dx, d_dy, d_dz;
+__constant__ int_t d_model_Nx, d_model_Ny;
+
+#define cudaErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+    if (code != cudaSuccess) {
+        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort) exit(code);
+    }
+}
+
 
 
 // Rotate the time step buffers for each dimension
@@ -92,16 +111,41 @@ void domain_save ( int_t step )
 void domain_initialize ()//at this point I can load an optional starting state. (I would need two steps actually)
 {
 
-    //alloc memory
-    for (int t = 0; t < 3; t++) {//for all time steps (prev, cur, next)
-        real_t *temp = calloc((Nx + 2*PADDING) * (Ny + 2*PADDING) * (Nz + 2*PADDING), sizeof(real_t));
-        // printf("alloced %d\n", (Nx + 2*PADDING) * (Ny + 2*PADDING) * (Nz + 2*PADDING));
-        if(temp == NULL){
-            fprintf(stderr, "[ERROR] could not allocate enough memory for all buffers\n");
-            exit(EXIT_FAILURE);
-        }
-        buffers[t] = temp;
-    }
+    // //alloc memory in GPU
+    cudaErrorCheck(cudaMalloc(&d_P_prv(0,0,0), sizeof(real_t) * Nx*Ny*Nz));
+    cudaErrorCheck(cudaMalloc(&d_P(0,0,0), sizeof(real_t) * Nx*Ny*Nz));
+    cudaErrorCheck(cudaMalloc(&d_P_nxt(0,0,0), sizeof(real_t) * Nx*Ny*Nz));
+
+    //set it all to 0
+    cudaErrorCheck(cudaMemSet(&d_P_prv(0,0,0), 0, Nx*Ny*Nz*sizeof(real_t));
+    cudaErrorCheck(cudaMemSet(&d_P(0,0,0),     0, Nx*Ny*Nz*sizeof(real_t));
+    cudaErrorCheck(cudaMemSet(&d_P_nxt(0,0,0), 0, Nx*Ny*Nz*sizeof(real_t));
+
+
+
+    //transfer runtime constants to gpu
+    cudaErrorCheck(cudaMemcpyToSymbol(d_Nx, &Nx, sizeof(int_t)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_Ny, &Ny, sizeof(int_t)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_Nz, &Nz, sizeof(int_t)));
+
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dx, &dx, sizeof(real_t)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dy, &dy, sizeof(real_t)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dz, &dz, sizeof(real_t)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dt, &dt, sizeof(real_t)));
+
+    cudaErrorCheck(cudaMemcpyToSymbol(d_model_Nx, &model_Nx, sizeof(real_t)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_model_Ny, &model_Ny, sizeof(real_t)));
+
+
+    // for (int t = 0; t < 3; t++) {//for all time steps (prev, cur, next)
+    //     real_t *temp = calloc((Nx + 2*PADDING) * (Ny + 2*PADDING) * (Nz + 2*PADDING), sizeof(real_t));
+    //     // printf("alloced %d\n", (Nx + 2*PADDING) * (Ny + 2*PADDING) * (Nz + 2*PADDING));
+    //     if(temp == NULL){
+    //         fprintf(stderr, "[ERROR] could not allocate enough memory for all buffers\n");
+    //         exit(EXIT_FAILURE);
+    //     }
+    //     buffers[t] = temp;
+    // }
 
 }
 
@@ -114,7 +158,7 @@ void domain_finalize ( void )
     }
 }
 
-void emit_sine(double t){
+__global__ void emit_sine(double t){
     //emit sin from center, at each direction
     double freq = 1e6;//1MHz
     int n = 1;
@@ -123,15 +167,18 @@ void emit_sine(double t){
         for (int x = Nx/2 - n; x <= Nx/2+n; x++) {
         for (int y = Ny/2 - n; y <= Ny/2+n; y++) {
         for (int z = Nz/2 - n; z <= Nz/2+n; z++) {
-            P(x,y,z) = center_value;
+            d_P(x,y,z) = center_value;
         }}}
     }
 }
 
-// Integration formula (Eq. 9 from the pdf document)
-void time_step ( double t )
+__global__ void time_step ()
 {
-    emit_sine(t);
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if(i >= device_Nx || j >= device_Ny || k >= device_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
 
     #pragma omp parallel for collapse(3)
     for (int i = 0; i < Nx; i++) {
@@ -145,15 +192,15 @@ void time_step ( double t )
         //  + dy*dy*dz*dz*((K(i - 1, j, k) - K(i + 1, j, k))*(K(i - 1, j, k) - K(i + 1, j, k))*P(i, j, k) + 2*(K(i - 1, j, k) - K(i + 1, j, k))*(P(i - 1, j, k) - P(i + 1, j, k))*K(i, j, k) + 4*(-2*K(i, j, k) + K(i - 1, j, k) + K(i + 1, j, k))*K(i, j, k)*P(i, j, k) + 2*(-2*P(i, j, k) + P(i - 1, j, k) + P(i + 1, j, k))*K(i, j, k)*K(i, j, k))) 
         //  + 2*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(2*dx*dx*dy*dy*dz*dz);
 
-        //2nd
+        //2nd: smaller stencil
         
-        // P_nxt(x, y, z) = (dt*dt*(dx*dx*dy*dy*((K(x, y, z - 1) - K(x, y, z + 1))*(P(x, y, z - 1) - P(x, y, z + 1)) + 2*(-2*P(x, y, z) + P(x, y, z - 1) + P(x, y, z + 1))*K(x, y, z)) 
-        // + dx*dx*dz*dz*((K(x, y - 1, z) - K(x, y + 1, z))*(P(x, y - 1, z) - P(x, y + 1, z)) + 2*(-2*P(x, y, z) + P(x, y - 1, z) + P(x, y + 1, z))*K(x, y, z)) 
-        // + dy*dy*dz*dz*((K(x - 1, y, z) - K(x + 1, y, z))*(P(x - 1, y, z) - P(x + 1, y, z)) + 2*(-2*P(x, y, z) + P(x - 1, y, z) + P(x + 1, y, z))*K(x, y, z)))*K(x, y, z) 
-        // + 2*dx*dx*dy*dy*dz*dz*(2*P(x, y, z) - P_prv(x, y, z)))/(2*dx*dx*dy*dy*dz*dz);
+        P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*((K(i, j, k - 1) - K(i, j, k + 1))*(P(i, j, k - 1) - P(i, j, k + 1)) + 2*(-2*P(i, j, k) + P(i, j, k - 1) + P(i, j, k + 1))*K(i, j, k)) 
+        + dx*dx*dz*dz*((K(i, j - 1, k) - K(i, j + 1, k))*(P(i, j - 1, k) - P(i, j + 1, k)) + 2*(-2*P(i, j, k) + P(i, j - 1, k) + P(i, y + 1, k))*K(i, j, k)) 
+        + dy*dy*dz*dz*((K(i - 1, j, k) - K(i + 1, j, k))*(P(i - 1, j, k) - P(i + 1, j, k)) + 2*(-2*P(i, j, k) + P(i - 1, j, k) + P(i + 1, j, k))*K(i, j, k)))*K(i, j, k) 
+        + 2*dx*dx*dy*dy*dz*dz*(2*P(i,j,k) - P_prv(i,j,k)))/(2*dx*dx*dy*dy*dz*dz);
 
-        //3nd
-        P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*(((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*P(i, j, k) + (P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3))*K(i, j, k))*(K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3)) + 2*((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*(P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3)) + 10*(-490*K(i, j, k) + 2*K(i, j, k - 3) - 27*K(i, j, k - 2) + 270*K(i, j, k - 1) + 270*K(i, j, k + 1) - 27*K(i, j, k + 2) + 2*K(i, j, k + 3))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j, k - 3) - 27*P(i, j, k - 2) + 270*P(i, j, k - 1) + 270*P(i, j, k + 1) - 27*P(i, j, k + 2) + 2*P(i, j, k + 3))*K(i, j, k))*K(i, j, k)) + dx*dx*dz*dz*(((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*P(i, j, k) + (P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k))*K(i, j, k))*(K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k)) + 2*((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*(P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k)) + 10*(-490*K(i, j, k) + 2*K(i, j - 3, k) - 27*K(i, j - 2, k) + 270*K(i, j - 1, k) + 270*K(i, j + 1, k) - 27*K(i, j + 2, k) + 2*K(i, j + 3, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j - 3, k) - 27*P(i, j - 2, k) + 270*P(i, j - 1, k) + 270*P(i, j + 1, k) - 27*P(i, j + 2, k) + 2*P(i, j + 3, k))*K(i, j, k))*K(i, j, k)) + dy*dy*dz*dz*(((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*P(i, j, k) + (P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k))*K(i, j, k))*(K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k)) + 2*((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*(P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k)) + 10*(-490*K(i, j, k) + 2*K(i - 3, j, k) - 27*K(i - 2, j, k) + 270*K(i - 1, j, k) + 270*K(i + 1, j, k) - 27*K(i + 2, j, k) + 2*K(i + 3, j, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i - 3, j, k) - 27*P(i - 2, j, k) + 270*P(i - 1, j, k) + 270*P(i + 1, j, k) - 27*P(i + 2, j, k) + 2*P(i + 3, j, k))*K(i, j, k))*K(i, j, k))) + 3600*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(3600*dx*dx*dy*dy*dz*dz);
+        //3nd: larger stencil
+        // P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*(((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*P(i, j, k) + (P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3))*K(i, j, k))*(K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3)) + 2*((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*(P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3)) + 10*(-490*K(i, j, k) + 2*K(i, j, k - 3) - 27*K(i, j, k - 2) + 270*K(i, j, k - 1) + 270*K(i, j, k + 1) - 27*K(i, j, k + 2) + 2*K(i, j, k + 3))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j, k - 3) - 27*P(i, j, k - 2) + 270*P(i, j, k - 1) + 270*P(i, j, k + 1) - 27*P(i, j, k + 2) + 2*P(i, j, k + 3))*K(i, j, k))*K(i, j, k)) + dx*dx*dz*dz*(((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*P(i, j, k) + (P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k))*K(i, j, k))*(K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k)) + 2*((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*(P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k)) + 10*(-490*K(i, j, k) + 2*K(i, j - 3, k) - 27*K(i, j - 2, k) + 270*K(i, j - 1, k) + 270*K(i, j + 1, k) - 27*K(i, j + 2, k) + 2*K(i, j + 3, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j - 3, k) - 27*P(i, j - 2, k) + 270*P(i, j - 1, k) + 270*P(i, j + 1, k) - 27*P(i, j + 2, k) + 2*P(i, j + 3, k))*K(i, j, k))*K(i, j, k)) + dy*dy*dz*dz*(((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*P(i, j, k) + (P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k))*K(i, j, k))*(K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k)) + 2*((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*(P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k)) + 10*(-490*K(i, j, k) + 2*K(i - 3, j, k) - 27*K(i - 2, j, k) + 270*K(i - 1, j, k) + 270*K(i + 1, j, k) - 27*K(i + 2, j, k) + 2*K(i + 3, j, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i - 3, j, k) - 27*P(i - 2, j, k) + 270*P(i - 1, j, k) + 270*P(i + 1, j, k) - 27*P(i + 2, j, k) + 2*P(i + 3, j, k))*K(i, j, k))*K(i, j, k))) + 3600*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(3600*dx*dx*dy*dy*dz*dz);
 
     }
     }
@@ -201,8 +248,16 @@ void simulation_loop( void )
         }
 
         // Derive step t+1 from steps t and t-1
-        time_step(iteration*dt);
-        boundary_condition();
+        emit_sine<<<1,1>>>(iteration*dt);
+
+        int block_x = 4;
+        int block_y = 16;
+        int block_z = 16;
+        dim3 blockSize(block_x,block_y,block_z);
+        dim3 gridSize((Nx + block_x - 1) / block_x, (Ny + block_y - 1) / block_y, (Nz + block_z - 1) / block_z);
+
+        time_step<<<<gridSize, blockSize>>>();
+        boundary_condition<<<1,1>>>();//for now
 
         // Rotate the time step buffers
         move_buffer_window();
@@ -210,7 +265,7 @@ void simulation_loop( void )
 }
 
 
-int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, double r_dt, int r_max_iter, int r_snapshot_freq, double r_sensor_height, int_t r_model_nx, int_t r_model_ny)
+extern "C" int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, double r_dt, int r_max_iter, int r_snapshot_freq, double r_sensor_height, int_t r_model_nx, int_t r_model_ny)
 {
     dt =r_dt;
     max_iteration = r_max_iter;
@@ -239,6 +294,8 @@ int simulate(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, double r_dt, i
 
     //FIRST PARSE AND SETUP SIMULATION PARAMETERS (done in domain_initialize)
     model = model_data;
+
+    init_cuda();
 
     // Set up the initial state of the domain
     domain_initialize();
@@ -286,7 +343,7 @@ void show_model(){
 
 }
 
-double K(int_t i, int_t j, int_t k){
+__device__ double K(int_t i, int_t j, int_t k){
 
 
 
@@ -342,4 +399,36 @@ double K(int_t i, int_t j, int_t k){
     }
 
     return WATER_K;
+}
+
+static bool init_cuda()
+{
+// BEGIN: T2
+    int dev_count;
+    cudaErrorCheck(cudaGetDeviceCount(&dev_count));
+
+
+     if (dev_count == 0) {
+        fprintf(stderr, "No CUDA-compatible devices found.\n");
+        return false;
+    }
+
+    cudaErrorCheck(cudaSetDevice(0));
+
+    cudaDeviceProp prop;
+    cudaErrorCheck(cudaGetDeviceProperties(&prop, 0));
+
+    // Print the device properties
+    // printf("Device count: %d\n", dev_count);
+    // printf("Using device 0: %s\n", prop.name);
+    // printf("\tCompute capability: %d.%d\n", prop.major, prop.minor);
+    // printf("\tMultiprocessors: %d\n", prop.multiProcessorCount);
+    // printf("\tWarp size: %d\n", prop.warpSize);
+    // printf("\tGlobal memory: %zu MB\n", prop.totalGlobalMem / (1024 * 1024));
+    // printf("\tPer-block shared memory: %zu KB\n", prop.sharedMemPerBlock / 1024);
+    // printf("\tPer-block registers: %d\n", prop.regsPerBlock);
+
+    return true;
+
+// END: T2
 }
