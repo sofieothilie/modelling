@@ -24,8 +24,8 @@ help()
 #-----------------------------------------------------------------
 set -e
 
-M=100
-N=100
+M=10
+N=200
 
 # Check if the data folder is provided
 if [ $# -lt 1 ]; then
@@ -85,6 +85,7 @@ for DATAFILE in "$DATAFOLDER"/*.dat; do
         cat <<END_OF_SCRIPT | gnuplot -
         set term png
         set output "$IMAGEFILE"
+        set size ratio ${N}/${M}
         set xlabel "X"
         set ylabel "Y"
         set xrange [0:${SIZE_M}]

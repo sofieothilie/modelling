@@ -16,18 +16,25 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     int snapshot_freq=20;
 
     double sensor_height=0.5;
+    int fs=8e6;
 
-    static char *kwlist[] = {"model", "res", "dt", "max_iter","snapshot_freq", "sensor_height", NULL};
+    PyArrayObject* signature_wave = NULL;
+    
+
+    static char *kwlist[] = {"model", "signature_wave", "res", "dt", "max_iter","snapshot_freq", "sensor_height", "sampling", NULL};
 
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!(iii)diid|$", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!O!(iii)diidi|$", kwlist,
                                      &PyArray_Type, &model,
+                                     &PyArray_Type, &signature_wave,
                                      &Nx, &Ny, &Nz,
-                                     &dt, &max_iter,&snapshot_freq, &sensor_height))
+                                     &dt, &max_iter,&snapshot_freq, &sensor_height, &fs))
     {
         printf("[ERROR] Illegal parameters passed to method\n");
         Py_RETURN_NONE;
     }
+
+
 
     if (!model) {
         printf("[ERROR] Model is NULL.\n");
@@ -35,7 +42,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     }
 
     // Ensure correct NumPy array type
-    if (PyArray_TYPE(model) != NPY_DOUBLE)
+    if (PyArray_TYPE(signature_wave) != NPY_DOUBLE)
     {
         PyErr_Format(PyExc_TypeError, "Array must be a NumPy array of type double.");
         printf("[ERROR] Model array is not of type double.\n");
@@ -49,6 +56,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
         return NULL;
     }
 
+    
 
     // Retrieve data pointer
     real_t* model_data = (real_t*)PyArray_DATA(model);
@@ -62,7 +70,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
         Py_RETURN_NONE;
     }
 
-    simulate(model_data, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1]);
+    simulate(model_data, Nx, Ny, Nz, dt, max_iter, snapshot_freq, sensor_height, model_dims[0], model_dims[1], (double*)PyArray_DATA(signature_wave), PyArray_DIM(signature_wave, 0), fs);
 
     Py_RETURN_NONE;
 }

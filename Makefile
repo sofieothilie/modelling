@@ -1,5 +1,4 @@
 
-IMAGES=$(shell find data -type f | sed s/\\.dat/.png/g | sed s/data/images/g )
 
 export PATH := "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.43.34808/bin/Hostx64/x64":$(PATH)
 
@@ -13,9 +12,9 @@ test:
 	python3 launch_sim.py
 
 
-plot: ${IMAGES}
-images/%.png: data/%.dat
-	./plot_2d.sh $<
+plot: 
+	python3 plot_all.py
+
 visu: clear module test 
 	make plot
 	ffmpeg -y -an -i images/%5d.png -vcodec libx264 -pix_fmt yuv420p -profile:v baseline -level 3 -r 12 wave.mp4
@@ -31,7 +30,7 @@ movie:
 
 build_cuda:
 	nvcc --version
-	nvcc -rdc=true -Xcompiler "/MD" -c -o temp.obj src\module\simulate_kernel.cu
+	nvcc -rdc=true -Xcompiler "/MD" -c -o temp.obj simulate_kernel.cu
 	nvcc -dlink -o modeling.obj temp.obj -Xlinker /NODEFAULTLIB:LIBCMT -L"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8/lib/x64" -lcudart -lcudart_static
 	del /F /Q libmodeling.lib
 	C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.43.34808/bin/Hostx64/x64/lib.exe /OUT:libmodeling.lib modeling.obj temp.obj 
