@@ -18,7 +18,7 @@
 //5x1x1 cm tube of water
 #define SIM_LX 0.01
 #define SIM_LY 0.01 
-#define SIM_LZ 0.001//need to add height of sensors, but thats a parameter
+#define SIM_LZ 0.01//need to add height of sensors, but thats a parameter
 
 //source and receiver at start and end of tube
 #define SOURCE_X 0

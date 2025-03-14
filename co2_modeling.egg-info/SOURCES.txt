@@ -1,9 +1,0 @@
-README.md
-modeling_py_wrapper.c
-module_setup.c
-setup.py
-simulate.c
-co2_modeling.egg-info/PKG-INFO
-co2_modeling.egg-info/SOURCES.txt
-co2_modeling.egg-info/dependency_links.txt
-co2_modeling.egg-info/top_level.txt

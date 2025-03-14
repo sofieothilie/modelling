@@ -9,16 +9,11 @@ module: build_cuda
 	python -m pip install .
 
 run:
-	mkdir data 2>nul || echo ""
+	mkdir data 2>nul || echo "data folder exists"
 	python launch_sim.py
-
 
 plot: 
 	python plot_all.py
-
-visu: clear module test 
-	make plot
-	ffmpeg -y -an -i images/%5d.png -vcodec libx264 -pix_fmt yuv420p -profile:v baseline -level 3 -r 12 wave.mp4
 
 clear:
 	rmdir /S /Q data images 2>nul || echo ""
@@ -38,6 +33,5 @@ build_cuda:
 	del /F /Q libmodeling.lib
 	C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.43.34808/bin/Hostx64/x64/lib.exe /OUT:libmodeling.lib modeling.obj temp.obj 
 
-test: run plot
 
 visu: run plot movie
