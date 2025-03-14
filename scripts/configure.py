@@ -1,3 +1,2 @@
-import sys
-compiler = "cl.exe" if sys.platform == "win32" else "gcc"
-print(compiler + " /DLL /nologo /MD")
+from distutils import sysconfig
+print(sysconfig.get_config_var('LDSHARED').replace("gcc", "g++"))

@@ -2,9 +2,8 @@
 #define _ARGUMENT_UTILS_H_
 
 #include <stdint.h>
-#include "modeling.h"
+#include "simulate_kernel.h"
 
-typedef int64_t int_t;
 
 typedef struct options_struct {
     real_t sim_Lx, sim_Ly, sim_Lz;

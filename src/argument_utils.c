@@ -49,24 +49,24 @@ while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index
             exit(0);
             break;
         case 'x':
-            sim_Lx = strtod(optarg, &endptr, 10);
-            if ( endptr == optarg || simul_x < 0 )
+            sim_Lx = strtod(optarg, &endptr);
+            if ( endptr == optarg || sim_Lx < 0 )
             {
                 help( argv[0], c, optarg );
                 return NULL;
             }
             break;
         case 'y':
-            sim_Ly = strtod(optarg, &endptr, 10);
-            if ( endptr == optarg || simul_y < 0 )
+            sim_Ly = strtod(optarg, &endptr);
+            if ( endptr == optarg || sim_Ly < 0 )
             {
                 help( argv[0], c, optarg );
                 return NULL;
             }
             break;
         case 'z':
-            sim_Lz = strtod(optarg, &endptr, 10);
-            if ( endptr == optarg || simul_z < 0 )
+            sim_Lz = strtod(optarg, &endptr);
+            if ( endptr == optarg || sim_Lz < 0 )
             {
                 help( argv[0], c, optarg );
                 return NULL;
@@ -74,7 +74,7 @@ while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index
             break;
         case 'X':
             Nx = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || resol_x < 0 )
+            if ( endptr == optarg || Nx < 0 )
             {
                 help( argv[0], c, optarg );
                 return NULL;
@@ -82,7 +82,7 @@ while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index
             break;
         case 'Y':
             Ny = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || resol_y < 0 )
+            if ( endptr == optarg || Ny < 0 )
             {
                 help( argv[0], c, optarg );
                 return NULL;
@@ -90,7 +90,7 @@ while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index
             break;
         case 'Z':
             Nz = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || resol_z < 0 )
+            if ( endptr == optarg || Nz < 0 )
             {
                 help( argv[0], c, optarg );
                 return NULL;
@@ -135,11 +135,16 @@ while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index
         return NULL;
     }
 
-  OPTIONS *args_parsed = malloc( sizeof(OPTIONS) );
-  args_parsed->M = M;
-  args_parsed->N = N;
-  args_parsed->max_iteration = max_iteration;
-  args_parsed->snapshot_frequency = snapshot_frequency;
+    OPTIONS *args_parsed = malloc( sizeof(OPTIONS) );
+    args_parsed->sim_Lx = sim_Lx;
+    args_parsed->sim_Ly = sim_Ly;
+    args_parsed->sim_Lz = sim_Lz;
+    args_parsed->dt = dt;
+    args_parsed->Nx = Nx;
+    args_parsed->Ny = Ny;
+    args_parsed->Nz = Nz;
+    args_parsed->max_iteration = max_iteration;
+    args_parsed->snapshot_frequency = snapshot_frequency;
 
   return args_parsed;
 }

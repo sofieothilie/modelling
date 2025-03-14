@@ -5,11 +5,9 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
-extern "C"{
-    #include "modeling.h"
-}
+#include "simulate_kernel.h"
 
-// #define MODEL_LX (double)3//length of model in meters
+
 // #define MODEL_LY (double)1//width of model in meters
 // #define MODEL_LZ 0.2//depth of model in centimeters
 
@@ -17,9 +15,9 @@ extern "C"{
 
 //total size of simulation
 //5x1x1 cm tube of water
-#define SIM_LX 0.025
-#define SIM_LY 0.025 
-#define SIM_LZ 0.025//need to add height of sensors, but thats a parameter
+#define SIM_LX 0.01
+#define SIM_LY 0.01 
+#define SIM_LZ 0.01//need to add height of sensors, but thats a parameter
 
 //source and receiver at start and end of tube
 #define SOURCE_X 0
@@ -99,8 +97,6 @@ void move_buffer_window ()
     d_buffer = d_buffer_nxt;
     d_buffer_nxt = temp;
 
-
-
 }
 
 
@@ -150,6 +146,19 @@ void domain_save ( int_t step )
     fclose ( out );
 }
 
+__global__ void fill_buffers(real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
+    int f= 0;
+    for(int j =0; j<d_Ny; j++)//take some slice 
+    {
+        for ( int_t k=0; k<d_Nz; k++ ){
+            for ( int_t i=0; i<d_Nx; i++ ){
+
+            d_P(i,j,k) = 1;
+            d_P_nxt(i,j,k) =.5;
+            d_P_prv(i,j,k)=0;
+        }}}
+}
+
 
 // Set up our three buffers, and fill two with an initial perturbation
 void domain_initialize ()//at this point I can load an optional starting state. (I would need two steps actually)
@@ -175,10 +184,6 @@ void domain_initialize ()//at this point I can load an optional starting state. 
     cudaErrorCheck(cudaMemset(d_buffer, 0, mem_size));
     cudaErrorCheck(cudaMemset(d_buffer_nxt, 0, mem_size));
 
-
-
-
-    //transfer runtime constants to gpu
     cudaErrorCheck(cudaMemcpyToSymbol(d_Nx, &Nx, sizeof(int_t)));
     cudaErrorCheck(cudaMemcpyToSymbol(d_Ny, &Ny, sizeof(int_t)));
     cudaErrorCheck(cudaMemcpyToSymbol(d_Nz, &Nz, sizeof(int_t)));
@@ -190,6 +195,7 @@ void domain_initialize ()//at this point I can load an optional starting state. 
 
     cudaErrorCheck(cudaMemcpyToSymbol(d_model_Nx, &model_Nx, sizeof(int_t)));
     cudaErrorCheck(cudaMemcpyToSymbol(d_model_Ny, &model_Ny, sizeof(int_t)));
+    // fill_buffers<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);
 
 }
 
@@ -206,25 +212,25 @@ void domain_finalize ( void )
     free(saved_buffer);
 }
 
-__global__ void emit_sine(double t, real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
-    //emit sin from center, at each direction
-    double freq = 1e6;//1MHz
-    int n = 1;
+// __global__ void emit_sine(double t, real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
+//     //emit sin from center, at each direction
+//     double freq = 1e6;//1MHz
+//     int n = 1;__global__ void fill_buffers(real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
 
-    if(t < 1./freq){
-        double sine = sin(2*M_PI*t*freq);
-        // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
-        // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
-        // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
+//     if(t < 1./freq){
+//         double sine = sin(2*M_PI*t*freq);
+//         // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
+//         // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
+//         // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
 
-        //     d_P(x,y,z) = sine;
-        // }}}
-        d_P(d_Nx/2,d_Ny/2,d_Nz/2) = sine;
+//         //     d_P(x,y,z) = sine;
+//         // }}}
+//         d_P(d_Nx/2,d_Ny/2,d_Nz/2) += sine;
 
-    }
-}
+//     }
+// }
 
-__global__ void time_step (real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt, double t)
+__global__ void time_step (const real_t * const d_buffer_prv, const real_t * const d_buffer, real_t *d_buffer_nxt, double t)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -238,7 +244,7 @@ __global__ void time_step (real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buf
         double freq = 1e6;//1MHz
         int n = 1;
 
-        if(t < 1./freq){
+        // if(t < 1./freq){
             double sine = sin(2*M_PI*t*freq);
             // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
             // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
@@ -249,7 +255,7 @@ __global__ void time_step (real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buf
             d_P_nxt(d_Nx/2,d_Ny/2,d_Nz/2) = sine;
             return;
         }
-    }
+    // }
 
     // printf("time step at cell %d %d %d\n", i,j,k);
     //I am using ijk instead of xyz since it is the index, not the position anymore. position can be computed x = i*dx, etc.
@@ -275,46 +281,47 @@ __global__ void time_step (real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buf
 }
 
 
-__global__ void boundary_condition (real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt)//TODO add rest of padding
+__global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_buffer, real_t *d_buffer_nxt)//TODO add rest of padding
 {
-// // X boundaries (left and right)
-// #pragma omp parallel for collapse(2)
-// for (int y = -PADDING; y < d_Ny + PADDING; y++) {
-//     for (int z = -PADDING; z < d_Nz + PADDING; z++) {
-//         for (int p = 1; p <= PADDING; p++) {
-//             // Extrapolate for left boundary (x = 0)
-//             d_P_nxt(-p, y, z) = 3 * d_P_nxt(p - 1, y, z) - 3 * d_P_nxt(p, y, z) + d_P_nxt(p + 1, y, z);
-            
-//             // Extrapolate for right boundary (x = Nx - 1)
-//             d_P_nxt(d_Nx + p - 1, y, z) = 3 * d_P_nxt(d_Nx - p, y, z) - 3 * d_P_nxt(d_Nx - p - 1, y, z) + d_P_nxt(d_Nx - p - 2, y, z);
-//         }
-//     }
-// }
+// X boundaries (left and right)
 
-// // Y boundaries (top and bottom)
-// #pragma omp parallel for collapse(2)
+for (int y = -PADDING; y < d_Ny + PADDING; y++) {
+    for (int z = -PADDING; z < d_Nz + PADDING; z++) {
+        // Extrapolate for left boundary (x = 0)
+        d_P_nxt(-1, y, z) = (d_P_nxt(0,y,z) - d_P(0,y,z)) * (1) + d_P_nxt(-1,y,z);
+        // if(y==d_Ny/2 && z == d_Nz/2)
+        //     printf("pnxt: %lf, p: %lf, pnxt(-1):\n", d_P_nxt(0,y,z), d_P(0,y,z));
+        
+        // Extrapolate for right boundary (x = Nx - 1)
+        // d_P_nxt(d_Nx, y, z) = d_P_nxt(d_Nx - 1,y,z);
+        
+    }
+}
+
+// Y boundaries (top and bottom)
+
 // for (int x = -PADDING; x < d_Nx + PADDING; x++) {
 //     for (int z = -PADDING; z < d_Nz + PADDING; z++) {
 //         for (int p = 1; p <= PADDING; p++) {
 //             // Extrapolate for bottom boundary (y = 0)
-//             d_P_nxt(x, -p, z) = 3 * d_P_nxt(x, p - 1, z) - 3 * d_P_nxt(x, p, z) + d_P_nxt(x, p + 1, z);
+//             d_P_nxt(x, -p, z) = d_P_nxt(x, 0, z) ;
             
-//             // Extrapolate for top boundary (y = d_Ny - 1)
-//             d_P_nxt(x, d_Ny + p - 1, z) = 3 * d_P_nxt(x, d_Ny - p, z) - 3 * d_P_nxt(x, d_Ny - p - 1, z) + d_P_nxt(x, d_Ny - p - 2, z);
+//             // Extdition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
+//             d_P_nxt(x, d_Ny + p - 1, z) = d_P_nxt(x, d_Ny - 1, z);
 //         }
 //     }
 // }
 
 // // Z boundaries (front and back)
-// #pragma omp parallel for collapse(2)
+
 // for (int x = -PADDING; x < d_Nx + PADDING; x++) {
 //     for (int y = -PADDING; y < d_Ny + PADDING; y++) {
 //         for (int p = 1; p <= PADDING; p++) {
 //             // Extrapolate for front boundary (z = 0)
-//             d_P_nxt(x, y, -p) = 3 * d_P_nxt(x, y, p - 1) - 3 * d_P_nxt(x, y, p) + d_P_nxt(x, y, p + 1);
+//             d_P_nxt(x, y, -p) = d_P_nxt(x, y, 0);
             
 //             // Extrapolate for back boundary (z = d_Nz - 1)
-//             d_P_nxt(x, y, d_Nz + p - 1) = 3 * d_P_nxt(x, y, d_Nz - p) - 3 * d_P_nxt(x, y, d_Nz - p - 1) + d_P_nxt(x, y, d_Nz - p - 2);
+//             d_P_nxt(x, y, d_Nz + p - 1) = d_P_nxt(x, y, d_Nz - 1);
 //         }
 //     }
 // }
@@ -342,8 +349,11 @@ void simulation_loop( void )
 {
     // Go through each time step
     // I think we should not think in terms of iteration but in term of time
+    // fill_buffers<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);
+
     for ( int_t iteration=0; iteration<max_iteration; iteration++ )
     {
+
         if ( (iteration % snapshot_freq)==0 )
         {
             printf("iteration %d/%d\n", iteration, max_iteration);
@@ -367,8 +377,9 @@ void simulation_loop( void )
 
         time_step<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer, d_buffer_nxt, iteration*dt);
         cudaDeviceSynchronize();
-        //boundary_condition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
-        // cudaDeviceSynchronize();
+
+        boundary_condition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
+        cudaDeviceSynchronize();
 
 
         
@@ -448,9 +459,9 @@ __device__ double K(int_t i, int_t j, int_t k){
     // }
 
     //to test in smaller space
-    if(j > 300){
-        return PLASTIC_K;
-    }
+    // if(j > 300){
+    //     return PLASTIC_K;
+    // }
     return WATER_K;
 
     //printf("x = %.4f, y = %.4f, z = %.4f\n", x, y, z);
