@@ -16,9 +16,9 @@
 
 //total size of simulation
 //5x1x1 cm tube of water
-#define SIM_LX 0.01
-#define SIM_LY 0.01 
-#define SIM_LZ 0.01//need to add height of sensors, but thats a parameter
+#define SIM_LX 0.025
+#define SIM_LY 0.025 
+#define SIM_LZ 0.025//need to add height of sensors, but thats a parameter
 
 //source and receiver at start and end of tube
 #define SOURCE_X 0
@@ -107,7 +107,7 @@ void move_buffer_window ()
 void domain_save ( int_t step )
 {
     char filename[256];
-    sprintf ( filename, "data/%.5d.dat", step );
+    sprintf ( filename, "wave_data/%.5d.dat", step );
     FILE *out = fopen ( filename, "wb" );
     if (!out) {
         printf("[ERROR] File pointer is NULL!\n");
@@ -166,7 +166,7 @@ void domain_initialize ()//at this point I can load an optional starting state. 
     cudaErrorCheck(cudaMalloc(&d_buffer_prv, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer_nxt, mem_size));
-    printf("alloced %u for P\n", mem_size);
+    printf("alloced %zu for P\n", mem_size);
 
     printf("all fine\n");
     //set it all to 0

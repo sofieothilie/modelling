@@ -26,10 +26,10 @@ python_include_path = "C:/Users/guill/AppData/Local/Programs/Python/Python312"  
 # Define the extension module
 module = Extension(
     'modeling',  # Module name
-    sources=['modeling_py_wrapper.c', 'module_setup.c'],  # Source file(s)
+    sources=['src/modeling_py_wrapper.c', 'src/module_setup.c'],  # Source file(s)
     include_dirs=[numpy.get_include(), os.path.join(CUDA_PATH, "include"), python_include_path],  # Include NumPy headers
     libraries=["libmodeling", "cudart_static"],
-    library_dirs=[".", os.path.join(CUDA_PATH, "lib/x64")],
+    library_dirs=["./cuda_build", os.path.join(CUDA_PATH, "lib/x64")],
     extra_compile_args=['/MD',],
     extra_link_args = ["/NODEFAULTLIB:LIBCMT"]
 )

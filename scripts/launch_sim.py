@@ -3,14 +3,14 @@ import scipy.io
 import modeling
 from scipy.io import loadmat
 
-res = (100,100,10)
-dt = 3e-10
+res = (100,100,100)
+dt = 1e-8
 n_steps = 5000
 snapshot_freq = 50
 sensor_height = 0.2
 
 def main():
-    mat_file = './zzz.mat' # Desktop
+    mat_file = './data/zzz.mat' # Desktop
     data = scipy.io.loadmat(mat_file)
     modelThickness = 0.2
     caprockDepth = data['zzz']
@@ -20,7 +20,7 @@ def main():
 
 
 
-    signature_mat = loadmat('filterOff_transducer_to_transducer.mat')
+    signature_mat = loadmat('data/filterOff_transducer_to_transducer.mat')
     waveform = signature_mat['data1'].squeeze()  # Replace with actual variable name
 
 

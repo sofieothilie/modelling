@@ -10,6 +10,9 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
 {
     import_array();
 
+    /*
+        Default value for parameters
+    */
     PyArrayObject* model = NULL; // 3D array of media
     int Nx = 0, Ny = 0, Nz = 0;
     double dt =0.001;
@@ -25,7 +28,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     static char *kwlist[] = {"model", "signature_wave", "res", "dt", "max_iter","snapshot_freq", "sensor_height", "sampling", NULL};
 
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!O!(iii)diidi|$", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O!O!(iii)diidi", kwlist,
                                      &PyArray_Type, &model,
                                      &PyArray_Type, &signature_wave,
                                      &Nx, &Ny, &Nz,

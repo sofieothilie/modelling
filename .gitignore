@@ -1,6 +1,6 @@
-data/
-images/
-*.mp4
+wave_data
+wave_images
+cuda_build
 *.ipynb
 
 __pycache__

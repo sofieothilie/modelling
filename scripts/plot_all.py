@@ -11,7 +11,7 @@ import launch_sim
 M = launch_sim.res[1]
 N = launch_sim.res[0]
 
-data_folder = "./data"
+data_folder = "./wave_data"
 
 def plot_data(file_path, output_path):
     data = np.fromfile(file_path, dtype=np.float64).reshape(N,M)
@@ -48,7 +48,7 @@ def plot_data_3d(file_path, output_path):
 
 
 def process_file(data_file):
-    output_file = data_file.replace(".dat", ".png").replace("data", "images")
+    output_file = data_file.replace(".dat", ".png").replace("wave_data", "wave_images")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plot_data_3d(data_file, output_file)
     print(f"Plot saved to {output_file}")
