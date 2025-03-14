@@ -2,13 +2,14 @@
 #define _ARGUMENT_UTILS_H_
 
 #include <stdint.h>
-
+#include "modeling.h"
 
 typedef int64_t int_t;
 
 typedef struct options_struct {
-    int_t M;
-    int_t N;
+    real_t sim_Lx, sim_Ly, sim_Lz;
+    real_t dt;
+    int_t Nx, Ny, Nz;
     int_t max_iteration;
     int_t snapshot_frequency;
 } OPTIONS;

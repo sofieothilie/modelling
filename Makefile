@@ -1,5 +1,3 @@
-
-
 # export PATH := "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.43.34808/bin/Hostx64/x64":$(PATH)
 
 all: clear module
@@ -49,6 +47,10 @@ build_cuda:
 	
 # Create the final library
 	lib.exe /OUT:cuda_build/libmodeling.lib cuda_build/modeling.obj cuda_build/temp.obj 
+
+build: src/argument_utils.c src/modeling_cmd.c src/simulate_kernel.cu
 	
 
+
 visu: run plot movie
+

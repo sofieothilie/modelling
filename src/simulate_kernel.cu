@@ -5,8 +5,9 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
-#include "modeling.h"
-
+extern "C"{
+    #include "modeling.h"
+}
 
 // #define MODEL_LX (double)3//length of model in meters
 // #define MODEL_LY (double)1//width of model in meters
