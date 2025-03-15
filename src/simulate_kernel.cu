@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
+#include <sys/time.h>
 #include "simulate_kernel.h"
 
 
@@ -28,6 +29,7 @@
 #define RECEIVER_Y SOURCE_X
 #define RECEIVER_Z SOURCE_Z
 
+#define PMLAYER 30
 #define PADDING 1
 
 #define WATER_K 1500
@@ -37,6 +39,8 @@
 __device__ double K(int_t i, int_t j, int_t k);
 void show_model();
 static bool init_cuda();
+
+#define WALLTIME(t) ((double)(t).tv_sec + 1e-6 * (double)(t).tv_usec)
 
 
 
@@ -69,9 +73,11 @@ real_t *saved_buffer = NULL;
 real_t *d_buffer_prv, *d_buffer, *d_buffer_nxt;
 
 //account for borders, (PADDING: ghost values)
-#define d_P_prv(i,j,k) d_buffer_prv[(i+PADDING) * ((d_Ny + 2*PADDING) * (d_Nz + 2*PADDING)) + (j+PADDING) * ((d_Nz + 2*PADDING)) + (k+PADDING)]
-#define d_P(i,j,k)     d_buffer[(i+PADDING) * ((d_Ny + 2*PADDING) * (d_Nz + 2*PADDING)) + (j+PADDING) * ((d_Nz + 2*PADDING)) + (k+PADDING)]
-#define d_P_nxt(i,j,k) d_buffer_nxt[(i+PADDING) * ((d_Ny + 2*PADDING) * (d_Nz + 2*PADDING)) + (j+PADDING) * ((d_Nz + 2*PADDING)) + (k+PADDING)]
+#define padded_index(i,j,k) (i+(PADDING + PMLAYER)) * ((d_Ny + 2*(PADDING + PMLAYER)) * (d_Nz + 2*(PADDING + PMLAYER))) + (j+(PADDING + PMLAYER)) * ((d_Nz + 2*(PADDING + PMLAYER))) + (k+(PADDING + PMLAYER))
+
+#define d_P_prv(i,j,k) d_buffer_prv[padded_index(i,j,k)]
+#define d_P(i,j,k)     d_buffer[padded_index(i,j,k)]
+#define d_P_nxt(i,j,k) d_buffer_nxt[padded_index(i,j,k)]
 
 __constant__ int_t d_Nx, d_Ny, d_Nz;
 __constant__ real_t d_dt, d_dx, d_dy, d_dz;
@@ -116,9 +122,9 @@ void domain_save ( int_t step )
 
     // for (size_t i = 0; i < Ny; i++)
     // {
-    //     // cudaErrorCheck(cudaMemcpy(&saved_buffer[Nx*i], &(d_buffer[(Nx/2+PADDING) * (Ny+2*PADDING) * (Nz+2*PADDING) + (i+PADDING) * ((Nz + 2*PADDING)) + (0+PADDING)]), Nz*sizeof(real_t), cudaMemcpyDeviceToHost));
+    //     // cudaErrorCheck(cudaMemcpy(&saved_buffer[Nx*i], &(d_buffer[(Nx/2+(PADDING + PMLAYER)) * (Ny+2*(PADDING + PMLAYER)) * (Nz+2*(PADDING + PMLAYER)) + (i+(PADDING + PMLAYER)) * ((Nz + 2*(PADDING + PMLAYER))) + (0+(PADDING + PMLAYER))]), Nz*sizeof(real_t), cudaMemcpyDeviceToHost));
     // }
-    cudaErrorCheck(cudaMemcpy(saved_buffer, d_buffer, sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING), cudaMemcpyDeviceToHost));
+    cudaErrorCheck(cudaMemcpy(saved_buffer, d_buffer, sizeof(real_t) * (Nx + 2*(PADDING + PMLAYER))*(Ny + 2*(PADDING + PMLAYER))*(Nz + 2*(PADDING + PMLAYER)), cudaMemcpyDeviceToHost));
     
     
     // for (int i = 0; i < d_Ny; i++)
@@ -133,7 +139,7 @@ void domain_save ( int_t step )
     for(int j =0; j<Ny; j++)//take some slice 
     {
         for ( int_t i=0; i<Nx; i++ ){
-        int w = fwrite (&saved_buffer[(i+PADDING) * ((Ny + 2*PADDING) * (Nz + 2*PADDING)) + (j+PADDING) * ((Nz + 2*PADDING)) + (Nz/2+PADDING)],
+        int w = fwrite (&saved_buffer[(i+(PADDING + PMLAYER)) * ((Ny + 2*(PADDING + PMLAYER)) * (Nz + 2*(PADDING + PMLAYER))) + (j+(PADDING + PMLAYER)) * ((Nz + 2*(PADDING + PMLAYER))) + (Nz/2+(PADDING + PMLAYER))],
          sizeof(real_t), 1, out);//take horizontal slice from middle, around yz axis
         if(w!=1) printf("could write all\n");
         }
@@ -165,14 +171,14 @@ void domain_initialize ()//at this point I can load an optional starting state. 
 {
     //alloc cpu memory for saving image
     //I take a YZ portion of the plane
-    saved_buffer = (real_t*)calloc((Nx+2*PADDING)*(Ny+2*PADDING)*(Nz+2*PADDING), sizeof(real_t));
+    saved_buffer = (real_t*)calloc((Nx+2*(PADDING + PMLAYER))*(Ny+2*(PADDING + PMLAYER))*(Nz+2*(PADDING + PMLAYER)), sizeof(real_t));
     if(!saved_buffer){
         fprintf(stderr, "[ERROR] could not allocate cpu memory\n");
         exit(EXIT_FAILURE);
     }
 
     // //alloc memory in GPU
-    size_t mem_size =  sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING);
+    size_t mem_size =  sizeof(real_t) * (Nx + 2*(PADDING + PMLAYER))*(Ny + 2*(PADDING + PMLAYER))*(Nz + 2*(PADDING + PMLAYER));
     cudaErrorCheck(cudaMalloc(&d_buffer_prv, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer_nxt, mem_size));
@@ -232,11 +238,11 @@ void domain_finalize ( void )
 
 __global__ void time_step (const real_t * const d_buffer_prv, const real_t * const d_buffer, real_t *d_buffer_nxt, double t)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int i = blockIdx.x * blockDim.x + threadIdx.x - PMLAYER;
+    int j = blockIdx.y * blockDim.y + threadIdx.y - PMLAYER;
+    int k = blockIdx.z * blockDim.z + threadIdx.z - PMLAYER;
 
-    if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
+    if(i >= d_Nx + PMLAYER || j >= d_Ny + PMLAYER || k >= d_Nz + PMLAYER) return;//out of bounds. maybe try better way to deal with this, that induce less waste
 
 
     if(i == d_Nx/2 && j == d_Ny/2 && k == d_Nz/2){
@@ -268,7 +274,11 @@ __global__ void time_step (const real_t * const d_buffer_prv, const real_t * con
 
     //2nd: smaller stencil
     
-    d_P_nxt(i, j, k) = (d_dt*d_dt*(d_dx*d_dx*d_dy*d_dy*((K(i, j, k - 1) - K(i, j, k + 1))*(d_P(i, j, k - 1) - d_P(i, j, k + 1)) + 2*(-2*d_P(i, j, k) + d_P(i, j, k - 1) + d_P(i, j, k + 1))*K(i, j, k)) 
+    double dampen = 0 <= i && i < d_Nx 
+                &&  0 <= j && j < d_Ny
+                &&  0 <= k && k < d_Nz ? 1 : 0.66 ;
+
+    d_P_nxt(i, j, k) = dampen * (d_dt*d_dt*(d_dx*d_dx*d_dy*d_dy*((K(i, j, k - 1) - K(i, j, k + 1))*(d_P(i, j, k - 1) - d_P(i, j, k + 1)) + 2*(-2*d_P(i, j, k) + d_P(i, j, k - 1) + d_P(i, j, k + 1))*K(i, j, k)) 
     + d_dx*d_dx*d_dz*d_dz*((K(i, j - 1, k) - K(i, j + 1, k))*(d_P(i, j - 1, k) - d_P(i, j + 1, k)) + 2*(-2*d_P(i, j, k) + d_P(i, j - 1, k) + d_P(i, j + 1, k))*K(i, j, k)) 
     + d_dy*d_dy*d_dz*d_dz*((K(i - 1, j, k) - K(i + 1, j, k))*(d_P(i - 1, j, k) - d_P(i + 1, j, k)) + 2*(-2*d_P(i, j, k) + d_P(i - 1, j, k) + d_P(i + 1, j, k))*K(i, j, k)))*K(i, j, k) 
     + 2*d_dx*d_dx*d_dy*d_dy*d_dz*d_dz*(2*d_P(i,j,k) - d_P_prv(i,j,k)))/(2*d_dx*d_dx*d_dy*d_dy*d_dz*d_dz);
@@ -281,28 +291,28 @@ __global__ void time_step (const real_t * const d_buffer_prv, const real_t * con
 }
 
 
-__global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_buffer, real_t *d_buffer_nxt)//TODO add rest of padding
+__global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_buffer, real_t *d_buffer_nxt)//TODO add rest of (PADDING + PMLAYER)
 {
 // X boundaries (left and right)
 
-for (int y = -PADDING; y < d_Ny + PADDING; y++) {
-    for (int z = -PADDING; z < d_Nz + PADDING; z++) {
-        // Extrapolate for left boundary (x = 0)
-        d_P_nxt(-1, y, z) = (d_P_nxt(0,y,z) - d_P(0,y,z)) * (1) + d_P_nxt(-1,y,z);
-        // if(y==d_Ny/2 && z == d_Nz/2)
-        //     printf("pnxt: %lf, p: %lf, pnxt(-1):\n", d_P_nxt(0,y,z), d_P(0,y,z));
+// for (int y = -(PADDING + PMLAYER); y < d_Ny + (PADDING + PMLAYER); y++) {
+//     for (int z = -(PADDING + PMLAYER); z < d_Nz + (PADDING + PMLAYER); z++) {
+//         // Extrapolate for left boundary (x = 0)
+//         d_P_nxt(-1, y, z) = (d_P_nxt(0,y,z) - d_P(0,y,z)) * (1) + d_P_nxt(-1,y,z);
+//         // if(y==d_Ny/2 && z == d_Nz/2)
+//         //     printf("pnxt: %lf, p: %lf, pnxt(-1):\n", d_P_nxt(0,y,z), d_P(0,y,z));
         
-        // Extrapolate for right boundary (x = Nx - 1)
-        // d_P_nxt(d_Nx, y, z) = d_P_nxt(d_Nx - 1,y,z);
+//         // Extrapolate for right boundary (x = Nx - 1)
+//         // d_P_nxt(d_Nx, y, z) = d_P_nxt(d_Nx - 1,y,z);
         
-    }
-}
+//     }
+// }
 
 // Y boundaries (top and bottom)
 
-// for (int x = -PADDING; x < d_Nx + PADDING; x++) {
-//     for (int z = -PADDING; z < d_Nz + PADDING; z++) {
-//         for (int p = 1; p <= PADDING; p++) {
+// for (int x = -(PADDING + PMLAYE; x < d_Nx + (PADDING + PMLAYER; x++) {
+//     for (int z = -(PADDING + PMLAYER; z < d_Nz + (PADDING + PMLAYER; z++) {
+//         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
 //             // Extrapolate for bottom boundary (y = 0)
 //             d_P_nxt(x, -p, z) = d_P_nxt(x, 0, z) ;
             
@@ -314,9 +324,9 @@ for (int y = -PADDING; y < d_Ny + PADDING; y++) {
 
 // // Z boundaries (front and back)
 
-// for (int x = -PADDING; x < d_Nx + PADDING; x++) {
-//     for (int y = -PADDING; y < d_Ny + PADDING; y++) {
-//         for (int p = 1; p <= PADDING; p++) {
+// for (int x = -(PADDING + PMLAYER; x < d_Nx + (PADDING + PMLAYER; x++) {
+//     for (int y = -(PADDING + PMLAYER; y < d_Ny + (PADDING + PMLAYER; y++) {
+//         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
 //             // Extrapolate for front boundary (z = 0)
 //             d_P_nxt(x, y, -p) = d_P_nxt(x, y, 0);
             
@@ -366,11 +376,11 @@ void simulation_loop( void )
         // emit_sine<<<1,1>>>(iteration*dt, d_buffer_prv, d_buffer, d_buffer_nxt);
         // cudaDeviceSynchronize();
 
-        int block_x = 16;
+        int block_x = 8;
         int block_y = 8;
-        int block_z = 8;
+        int block_z = 16;
         dim3 blockSize(block_x,block_y,block_z);
-        dim3 gridSize((Nx + block_x - 1) / block_x, (Ny + block_y - 1) / block_y, (Nz + block_z - 1) / block_z);
+        dim3 gridSize(((Nx + PMLAYER*2) + block_x - 1) / block_x, ((Ny + PMLAYER*2) + block_y - 1) / block_y, ((Nz + PMLAYER*2) + block_z - 1) / block_z);
 
         // printf("grid size: %u %u %u\n", gridSize.x, gridSize.y, gridSize.z);
         // printf("block size: %u %u %u\n", blockSize.x, blockSize.y, blockSize.z);
@@ -430,8 +440,17 @@ extern "C" int simulate_wave(real_t* model_data, int_t n_x, int_t n_y, int_t n_z
     // Set up the initial state of the domain
     domain_initialize();
 
+    struct timeval t_start, t_end;
+
     //show_model();
+    gettimeofday(&t_start, NULL);
     simulation_loop();
+    gettimeofday(&t_end, NULL);
+    
+    printf("Total elapsed time: %lf seconds\n", WALLTIME(t_end) - WALLTIME(t_start));
+    
+    
+    
 
     // Clean up and shut down
     domain_finalize();
