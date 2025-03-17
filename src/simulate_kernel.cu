@@ -29,8 +29,7 @@
 // #define RECEIVER_Y SOURCE_X
 // #define RECEIVER_Z SOURCE_Z
 
-#define PMLAYER 0
-#define PADDING 1
+#define PADDING 40
 
 #define WATER_K 1500
 #define PLASTIC_K 2270
@@ -74,8 +73,20 @@ real_t *saved_buffer = NULL;
 //CUDA elements
 real_t *d_buffer_prv, *d_buffer, *d_buffer_nxt;
 
+//the indexing is weird, because these values only exist for the boundaries, so looks like a corner, of depth PADDING
+real_t *d_phi_x, d_phi_y, d_phi_z;
+
+#define PADDING_BOTTOM_INDEX 0
+#define PADDING_BOTTOM_SIZE (d_Nx + PADDING) * (d_Ny + PADDING) * PADDING
+
+#define PADDING_SIDE_INDEX PADDING_BOTTOM_SIZE // the side indexing starts right after the BOTTOM
+#define PADDING_SIDE_SIZE (d_Ny + PADDING) * d_Nz * PADDING
+
+#define PADDING_FRONT_INDEX PADDING_SIDE_INDEX + PADDING_SIDE_SIZE // FRONT starts indexing right after side
+#define PADDING_FRONT_SIZE d_Nx * d_Nz * PADDING
+
 //account for borders, (PADDING: ghost values)
-#define padded_index(i,j,k) (i+(PADDING + PMLAYER)) * ((d_Ny + 2*(PADDING + PMLAYER)) * (d_Nz + 2*(PADDING + PMLAYER))) + (j+(PADDING + PMLAYER)) * ((d_Nz + 2*(PADDING + PMLAYER))) + (k+(PADDING + PMLAYER))
+#define padded_index(i,j,k) (i+PADDING) * ((d_Ny + 2*PADDING) * (d_Nz + 2*PADDING)) + (j+PADDING) * ((d_Nz + 2*PADDING)) + (k+PADDING)
 
 #define d_P_prv(i,j,k) d_buffer_prv[padded_index(i,j,k)]
 #define d_P(i,j,k)     d_buffer[padded_index(i,j,k)]
@@ -93,6 +104,39 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
         if (abort) exit(code);
     }
 }
+
+//When calling this, consider the warp geometry to reduce divergence. more info in my notebook
+__device__ int boundary_at(real_t* buffer, int_t i, int_t j, int_t k){
+    //doing some weird indexing to retrieve the correct boundary
+
+    //assuming x is on the side, y axis pointing you, I guess I could have done better to have the axes in reverse order but ok
+
+    if(k >= d_Nz)//on the BOTTOM boundary ! axis go downwards
+        {
+            k -= d_Nz;//bring bottom layer back up
+            //dimensions of bottom layer: (Nx + PADDING, Ny + PADDING, PADDING)
+            int idx = i * (d_Ny + PADDING) * PADDING + j * PADDING + k
+            return buffer[PADDING_BOTTOM_INDEX  + idx];
+        }
+    if(x >= d_Nx)//on the SIDE boundary
+        {
+            i -= d_Nx;//bring side layer to left
+            //dimensions of side layer: (PADDING, Ny + PADDING, Nz)
+            int idx = i * (Ny + PADDING) * Nz + j * Nz + k;
+            return buffer[PADDING_SIDE_INDEX + idx];
+        }
+    if(y >= d_Ny)//on the FRONT boundary!
+        {
+            j -= d_Ny;//bring front layer back
+            //dimensions of front layer: (Nx, PADDING, Nz)
+            int idx = i * PADDING * Nz + j * Nz + k;
+            return buffer[PADDING_FRONT_INDEX + idx];
+        }
+
+    //this happens when I'm not in a boundary anymore, what to do then ? I guess that can happen, but will never be processed further, so just ignore this
+    return 0;
+}
+
 
 
 
@@ -124,9 +168,9 @@ void domain_save ( int_t step )
 
     // for (size_t i = 0; i < Ny; i++)
     // {
-    //     // cudaErrorCheck(cudaMemcpy(&saved_buffer[Nx*i], &(d_buffer[(Nx/2+(PADDING + PMLAYER)) * (Ny+2*(PADDING + PMLAYER)) * (Nz+2*(PADDING + PMLAYER)) + (i+(PADDING + PMLAYER)) * ((Nz + 2*(PADDING + PMLAYER))) + (0+(PADDING + PMLAYER))]), Nz*sizeof(real_t), cudaMemcpyDeviceToHost));
+    //     // cudaErrorCheck(cudaMemcpy(&saved_buffer[Nx*i], &(d_buffer[(Nx/2+PADDING) * (Ny+2*PADDING) * (Nz+2*PADDING) + (i+PADDING) * ((Nz + 2*PADDING)) + (0+PADDING)]), Nz*sizeof(real_t), cudaMemcpyDeviceToHost));
     // }
-    cudaErrorCheck(cudaMemcpy(saved_buffer, d_buffer, sizeof(real_t) * (Nx + 2*(PADDING + PMLAYER))*(Ny + 2*(PADDING + PMLAYER))*(Nz + 2*(PADDING + PMLAYER)), cudaMemcpyDeviceToHost));
+    cudaErrorCheck(cudaMemcpy(saved_buffer, d_buffer, sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING), cudaMemcpyDeviceToHost));
     
     
     // for (int i = 0; i < d_Ny; i++)
@@ -141,7 +185,7 @@ void domain_save ( int_t step )
     for(int j =0; j<Ny; j++)//take some slice 
     {
         for ( int_t i=0; i<Nx; i++ ){
-        int w = fwrite (&saved_buffer[(i+(PADDING + PMLAYER)) * ((Ny + 2*(PADDING + PMLAYER)) * (Nz + 2*(PADDING + PMLAYER))) + (j+(PADDING + PMLAYER)) * ((Nz + 2*(PADDING + PMLAYER))) + (Nz/2+(PADDING + PMLAYER))],
+        int w = fwrite (&saved_buffer[(i+PADDING) * ((Ny + 2*PADDING) * (Nz + 2*PADDING)) + (j+PADDING) * ((Nz + 2*PADDING)) + (Nz/2+PADDING)],
          sizeof(real_t), 1, out);//take horizontal slice from middle, around yz axis
         if(w!=1) printf("could write all\n");
         }
@@ -173,14 +217,14 @@ void domain_initialize ()//at this point I can load an optional starting state. 
 {
     //alloc cpu memory for saving image
     //I take a YZ portion of the plane
-    saved_buffer = (real_t*)calloc((Nx+2*(PADDING + PMLAYER))*(Ny+2*(PADDING + PMLAYER))*(Nz+2*(PADDING + PMLAYER)), sizeof(real_t));
+    saved_buffer = (real_t*)calloc((Nx+2*PADDING)*(Ny+2*PADDING)*(Nz+2*PADDING), sizeof(real_t));
     if(!saved_buffer){
         fprintf(stderr, "[ERROR] could not allocate cpu memory\n");
         exit(EXIT_FAILURE);
     }
 
     // //alloc memory in GPU
-    size_t mem_size =  sizeof(real_t) * (Nx + 2*(PADDING + PMLAYER))*(Ny + 2*(PADDING + PMLAYER))*(Nz + 2*(PADDING + PMLAYER));
+    size_t mem_size =  sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING);
     cudaErrorCheck(cudaMalloc(&d_buffer_prv, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer_nxt, mem_size));
@@ -242,11 +286,11 @@ void domain_finalize ( void )
 
 __global__ void time_step (const real_t * const d_buffer_prv, const real_t * const d_buffer, real_t *d_buffer_nxt, double t)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x - PMLAYER;
-    int j = blockIdx.y * blockDim.y + threadIdx.y - PMLAYER;
-    int k = blockIdx.z * blockDim.z + threadIdx.z - PMLAYER;
+    int i = blockIdx.x * blockDim.x + threadIdx.x ;
+    int j = blockIdx.y * blockDim.y + threadIdx.y ;
+    int k = blockIdx.z * blockDim.z + threadIdx.z ;
 
-    if(i >= d_Nx + PMLAYER || j >= d_Ny + PMLAYER || k >= d_Nz + PMLAYER) return;//out of bounds. maybe try better way to deal with this, that induce less waste
+    if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
 
 
     if(i == d_Nx/2 && j == d_Ny/2 && k == d_Nz/2){
@@ -284,8 +328,8 @@ __global__ void time_step (const real_t * const d_buffer_prv, const real_t * con
 __global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_buffer, real_t *d_buffer_nxt){
     // X boundaries (left and right)
 
-    // for (int y = -(PADDING + PMLAYER); y < d_Ny + (PADDING + PMLAYER); y++) {
-    //     for (int z = -(PADDING + PMLAYER); z < d_Nz + (PADDING + PMLAYER); z++) {
+    // for (int y = -PADDING; y < d_Ny + PADDING; y++) {
+    //     for (int z = -PADDING; z < d_Nz + PADDING; z++) {
     //         // Extrapolate for left boundary (x = 0)
     //         d_P_nxt(-1, y, z) = (d_P_nxt(0,y,z) - d_P(0,y,z)) * (1) + d_P_nxt(-1,y,z);
     //         // if(y==d_Ny/2 && z == d_Nz/2)
@@ -311,7 +355,7 @@ __global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_
     //     }
     // }
 
-    // // Z boundaries (front and back)
+    // // Z boundaries (front and FRONT)
 
     // for (int x = -(PADDING + PMLAYER; x < d_Nx + (PADDING + PMLAYER; x++) {
     //     for (int y = -(PADDING + PMLAYER; y < d_Ny + (PADDING + PMLAYER; y++) {
@@ -369,7 +413,7 @@ void simulation_loop( void )
         int block_y = 8;
         int block_z = 8 ;
         dim3 blockSize(block_x,block_y,block_z);
-        dim3 gridSize(((Nx + PMLAYER*2) + block_x - 1) / block_x, ((Ny + PMLAYER*2) + block_y - 1) / block_y, ((Nz + PMLAYER*2) + block_z - 1) / block_z);
+        dim3 gridSize((Nx + block_x - 1) / block_x, (Ny + block_y - 1) / block_y, (Nz + block_z - 1) / block_z);
 
         // printf("grid size: %u %u %u\n", gridSize.x, gridSize.y, gridSize.z);
         // printf("block size: %u %u %u\n", blockSize.x, blockSize.y, blockSize.z);
