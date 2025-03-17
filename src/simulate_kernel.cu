@@ -12,24 +12,24 @@
 // #define MODEL_LY (double)1//width of model in meters
 // #define MODEL_LZ 0.2//depth of model in centimeters
 
-#define RESERVOIR_OFFSET .5//just water on each side of the reservoir
+// #define RESERVOIR_OFFSET .5//just water on each side of the reservoir
 
 //total size of simulation
 //5x1x1 cm tube of water
-#define SIM_LX 0.01
-#define SIM_LY 0.01 
-#define SIM_LZ 0.01//need to add height of sensors, but thats a parameter
+// #define SIM_LX 0.01
+// #define SIM_LY 0.01 
+// #define SIM_LZ 0.01//need to add height of sensors, but thats a parameter
 
 //source and receiver at start and end of tube
-#define SOURCE_X 0
-#define SOURCE_Y SIM_LY / 2
-#define SOURCE_Z SIM_LZ / 2
+// #define SOURCE_X 0
+// #define SOURCE_Y SIM_LY / 2
+// #define SOURCE_Z SIM_LZ / 2
 
-#define RECEIVER_X SIM_LX
-#define RECEIVER_Y SOURCE_X
-#define RECEIVER_Z SOURCE_Z
+// #define RECEIVER_X SIM_LX
+// #define RECEIVER_Y SOURCE_X
+// #define RECEIVER_Z SOURCE_Z
 
-#define PMLAYER 30
+#define PMLAYER 0
 #define PADDING 1
 
 #define WATER_K 1500
@@ -49,25 +49,27 @@ int_t snapshot_freq;
 double sensor_height;
 
 
-int_t model_Nx, model_Ny;
+#define MODEL_NX 1201
+#define MODEL_NY 401
 
-real_t* model;
+double* model;
 
 double* signature_wave;
 int signature_len;
 int sampling_freq;
 
 int_t Nx, Ny, Nz;//they must be parsed in the main before used anywhere, I guess that's a very bad way of doing it, but the template did it like this
+double sim_Lx, sim_Ly, sim_Lz;
 
-real_t dt;
-real_t dx,dy,dz;
+double dt;
+double dx,dy,dz;
 
 //first index is the dimension(xyz direction of vector), second is the time step
 // real_t *buffers[3] = { NULL, NULL, NULL };
 real_t *saved_buffer = NULL;
 
 
-#define MODEL_AT(i,j) model[i + j*model_Nx]
+#define MODEL_AT(i,j) model[i + j*MODEL_NX]
 
 //CUDA elements
 real_t *d_buffer_prv, *d_buffer, *d_buffer_nxt;
@@ -80,8 +82,8 @@ real_t *d_buffer_prv, *d_buffer, *d_buffer_nxt;
 #define d_P_nxt(i,j,k) d_buffer_nxt[padded_index(i,j,k)]
 
 __constant__ int_t d_Nx, d_Ny, d_Nz;
-__constant__ real_t d_dt, d_dx, d_dy, d_dz;
-__constant__ int_t d_model_Nx, d_model_Ny;
+__constant__ double d_dt, d_dx, d_dy, d_dz;
+__constant__ double d_sim_Lx, d_sim_Ly, d_sim_Lz;
 
 #define cudaErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -152,18 +154,18 @@ void domain_save ( int_t step )
     fclose ( out );
 }
 
-__global__ void fill_buffers(real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
-    int f= 0;
-    for(int j =0; j<d_Ny; j++)//take some slice 
-    {
-        for ( int_t k=0; k<d_Nz; k++ ){
-            for ( int_t i=0; i<d_Nx; i++ ){
+// __global__ void fill_buffers(real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
+//     int f= 0;
+//     for(int j =0; j<d_Ny; j++)//take some slice 
+//     {
+//         for ( int_t k=0; k<d_Nz; k++ ){
+//             for ( int_t i=0; i<d_Nx; i++ ){
 
-            d_P(i,j,k) = 1;
-            d_P_nxt(i,j,k) =.5;
-            d_P_prv(i,j,k)=0;
-        }}}
-}
+//             d_P(i,j,k) = 1;
+//             d_P_nxt(i,j,k) =.5;
+//             d_P_prv(i,j,k)=0;
+//         }}}
+// }
 
 
 // Set up our three buffers, and fill two with an initial perturbation
@@ -184,24 +186,26 @@ void domain_initialize ()//at this point I can load an optional starting state. 
     cudaErrorCheck(cudaMalloc(&d_buffer_nxt, mem_size));
     printf("alloced %zu for P\n", mem_size);
 
-    printf("all fine\n");
-    //set it all to 0
+    //set it all to 0 (memset only works for int!)
     cudaErrorCheck(cudaMemset(d_buffer_prv, 0, mem_size));
-    cudaErrorCheck(cudaMemset(d_buffer, 0, mem_size));
+    cudaErrorCheck(cudaMemset(d_buffer,     0, mem_size));
     cudaErrorCheck(cudaMemset(d_buffer_nxt, 0, mem_size));
 
     cudaErrorCheck(cudaMemcpyToSymbol(d_Nx, &Nx, sizeof(int_t)));
     cudaErrorCheck(cudaMemcpyToSymbol(d_Ny, &Ny, sizeof(int_t)));
     cudaErrorCheck(cudaMemcpyToSymbol(d_Nz, &Nz, sizeof(int_t)));
 
-    cudaErrorCheck(cudaMemcpyToSymbol(d_dx, &dx, sizeof(real_t)));
-    cudaErrorCheck(cudaMemcpyToSymbol(d_dy, &dy, sizeof(real_t)));
-    cudaErrorCheck(cudaMemcpyToSymbol(d_dz, &dz, sizeof(real_t)));
-    cudaErrorCheck(cudaMemcpyToSymbol(d_dt, &dt, sizeof(real_t)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dx, &dx, sizeof(double)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dy, &dy, sizeof(double)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dz, &dz, sizeof(double)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_dt, &dt, sizeof(double)));
 
-    cudaErrorCheck(cudaMemcpyToSymbol(d_model_Nx, &model_Nx, sizeof(int_t)));
-    cudaErrorCheck(cudaMemcpyToSymbol(d_model_Ny, &model_Ny, sizeof(int_t)));
-    // fill_buffers<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);
+    cudaErrorCheck(cudaMemcpyToSymbol(d_sim_Lx, &sim_Lx, sizeof(double)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_sim_Ly, &sim_Ly, sizeof(double)));
+    cudaErrorCheck(cudaMemcpyToSymbol(d_sim_Lz, &sim_Lz, sizeof(double)));
+
+    // cudaErrorCheck(cudaMemcpyToSymbol(d_model_Nx, &model_Nx, sizeof(int_t)));
+    // cudaErrorCheck(cudaMemcpyToSymbol(d_model_Ny, &model_Ny, sizeof(int_t)));
 
 }
 
@@ -250,7 +254,7 @@ __global__ void time_step (const real_t * const d_buffer_prv, const real_t * con
         double freq = 1e6;//1MHz
         int n = 1;
 
-        // if(t < 1./freq){
+        if(t < 1./freq){
             double sine = sin(2*M_PI*t*freq);
             // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
             // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
@@ -261,93 +265,78 @@ __global__ void time_step (const real_t * const d_buffer_prv, const real_t * con
             d_P_nxt(d_Nx/2,d_Ny/2,d_Nz/2) = sine;
             return;
         }
-    // }
+    }
 
     // printf("time step at cell %d %d %d\n", i,j,k);
-    //I am using ijk instead of xyz since it is the index, not the position anymore. position can be computed x = i*dx, etc.
 
-    // //1st
-    // P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*((K(i, j, k - 1) - K(i, j, k + 1))*(K(i, j, k - 1) - K(i, j, k + 1))*P(i, j, k) + 2*(K(i, j, k - 1) - K(i, j, k + 1))*(P(i, j, k - 1) - P(i, j, k + 1))*K(i, j, k) + 4*(-2*K(i, j, k) + K(i, j, k - 1) + K(i, j, k + 1))*K(i, j, k)*P(i, j, k) + 2*(-2*P(i, j, k) + P(i, j, k - 1) + P(i, j, k + 1))*K(i, j, k)*K(i, j, k))
-    //  + dx*dx*dz*dz*((K(i, j - 1, k) - K(i, j + 1, k))*(K(i, j - 1, k) - K(i, j + 1, k))*P(i, j, k) + 2*(K(i, j - 1, k) - K(i, j + 1, k))*(P(i, j - 1, k) - P(i, j + 1, k))*K(i, j, k) + 4*(-2*K(i, j, k) + K(i, j - 1, k) + K(i, j + 1, k))*K(i, j, k)*P(i, j, k) + 2*(-2*P(i, j, k) + P(i, j - 1, k) + P(i, j + 1, k))*K(i, j, k)*K(i, j, k)) 
-    //  + dy*dy*dz*dz*((K(i - 1, j, k) - K(i + 1, j, k))*(K(i - 1, j, k) - K(i + 1, j, k))*P(i, j, k) + 2*(K(i - 1, j, k) - K(i + 1, j, k))*(P(i - 1, j, k) - P(i + 1, j, k))*K(i, j, k) + 4*(-2*K(i, j, k) + K(i - 1, j, k) + K(i + 1, j, k))*K(i, j, k)*P(i, j, k) + 2*(-2*P(i, j, k) + P(i - 1, j, k) + P(i + 1, j, k))*K(i, j, k)*K(i, j, k))) 
-    //  + 2*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(2*dx*dx*dy*dy*dz*dz);
-
-    //2nd: smaller stencil
     
     double dampen = 0 <= i && i < d_Nx 
                 &&  0 <= j && j < d_Ny
-                &&  0 <= k && k < d_Nz ? 1 : 0.66 ;
+                &&  0 <= k && k < d_Nz ? 1 : 1 ;
 
     d_P_nxt(i, j, k) = dampen * (d_dt*d_dt*(d_dx*d_dx*d_dy*d_dy*((K(i, j, k - 1) - K(i, j, k + 1))*(d_P(i, j, k - 1) - d_P(i, j, k + 1)) + 2*(-2*d_P(i, j, k) + d_P(i, j, k - 1) + d_P(i, j, k + 1))*K(i, j, k)) 
     + d_dx*d_dx*d_dz*d_dz*((K(i, j - 1, k) - K(i, j + 1, k))*(d_P(i, j - 1, k) - d_P(i, j + 1, k)) + 2*(-2*d_P(i, j, k) + d_P(i, j - 1, k) + d_P(i, j + 1, k))*K(i, j, k)) 
     + d_dy*d_dy*d_dz*d_dz*((K(i - 1, j, k) - K(i + 1, j, k))*(d_P(i - 1, j, k) - d_P(i + 1, j, k)) + 2*(-2*d_P(i, j, k) + d_P(i - 1, j, k) + d_P(i + 1, j, k))*K(i, j, k)))*K(i, j, k) 
     + 2*d_dx*d_dx*d_dy*d_dy*d_dz*d_dz*(2*d_P(i,j,k) - d_P_prv(i,j,k)))/(2*d_dx*d_dx*d_dy*d_dy*d_dz*d_dz);
-    // d_P_prv(i, j, k) = 1;
-    // d_P(i, j, k) = 1;
-    // d_P_nxt(i, j, k) = 1;//(double)(i+j+k)/(d_Nx+d_Ny+d_Nz);
-    //3nd: larger stencil
-    // P_nxt(i, j, k) = (dt*dt*(dx*dx*dy*dy*(((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*P(i, j, k) + (P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3))*K(i, j, k))*(K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3)) + 2*((K(i, j, k - 3) - 9*K(i, j, k - 2) + 45*K(i, j, k - 1) - 45*K(i, j, k + 1) + 9*K(i, j, k + 2) - K(i, j, k + 3))*(P(i, j, k - 3) - 9*P(i, j, k - 2) + 45*P(i, j, k - 1) - 45*P(i, j, k + 1) + 9*P(i, j, k + 2) - P(i, j, k + 3)) + 10*(-490*K(i, j, k) + 2*K(i, j, k - 3) - 27*K(i, j, k - 2) + 270*K(i, j, k - 1) + 270*K(i, j, k + 1) - 27*K(i, j, k + 2) + 2*K(i, j, k + 3))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j, k - 3) - 27*P(i, j, k - 2) + 270*P(i, j, k - 1) + 270*P(i, j, k + 1) - 27*P(i, j, k + 2) + 2*P(i, j, k + 3))*K(i, j, k))*K(i, j, k)) + dx*dx*dz*dz*(((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*P(i, j, k) + (P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k))*K(i, j, k))*(K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k)) + 2*((K(i, j - 3, k) - 9*K(i, j - 2, k) + 45*K(i, j - 1, k) - 45*K(i, j + 1, k) + 9*K(i, j + 2, k) - K(i, j + 3, k))*(P(i, j - 3, k) - 9*P(i, j - 2, k) + 45*P(i, j - 1, k) - 45*P(i, j + 1, k) + 9*P(i, j + 2, k) - P(i, j + 3, k)) + 10*(-490*K(i, j, k) + 2*K(i, j - 3, k) - 27*K(i, j - 2, k) + 270*K(i, j - 1, k) + 270*K(i, j + 1, k) - 27*K(i, j + 2, k) + 2*K(i, j + 3, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i, j - 3, k) - 27*P(i, j - 2, k) + 270*P(i, j - 1, k) + 270*P(i, j + 1, k) - 27*P(i, j + 2, k) + 2*P(i, j + 3, k))*K(i, j, k))*K(i, j, k)) + dy*dy*dz*dz*(((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*P(i, j, k) + (P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k))*K(i, j, k))*(K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k)) + 2*((K(i - 3, j, k) - 9*K(i - 2, j, k) + 45*K(i - 1, j, k) - 45*K(i + 1, j, k) + 9*K(i + 2, j, k) - K(i + 3, j, k))*(P(i - 3, j, k) - 9*P(i - 2, j, k) + 45*P(i - 1, j, k) - 45*P(i + 1, j, k) + 9*P(i + 2, j, k) - P(i + 3, j, k)) + 10*(-490*K(i, j, k) + 2*K(i - 3, j, k) - 27*K(i - 2, j, k) + 270*K(i - 1, j, k) + 270*K(i + 1, j, k) - 27*K(i + 2, j, k) + 2*K(i + 3, j, k))*P(i, j, k) + 10*(-490*P(i, j, k) + 2*P(i - 3, j, k) - 27*P(i - 2, j, k) + 270*P(i - 1, j, k) + 270*P(i + 1, j, k) - 27*P(i + 2, j, k) + 2*P(i + 3, j, k))*K(i, j, k))*K(i, j, k))) + 3600*dx*dx*dy*dy*dz*dz*(2*P(i, j, k) - P_prv(i, j, k)))/(3600*dx*dx*dy*dy*dz*dz);
-    
 }
 
 
-__global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_buffer, real_t *d_buffer_nxt)//TODO add rest of (PADDING + PMLAYER)
-{
-// X boundaries (left and right)
+__global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_buffer, real_t *d_buffer_nxt){
+    // X boundaries (left and right)
 
-// for (int y = -(PADDING + PMLAYER); y < d_Ny + (PADDING + PMLAYER); y++) {
-//     for (int z = -(PADDING + PMLAYER); z < d_Nz + (PADDING + PMLAYER); z++) {
-//         // Extrapolate for left boundary (x = 0)
-//         d_P_nxt(-1, y, z) = (d_P_nxt(0,y,z) - d_P(0,y,z)) * (1) + d_P_nxt(-1,y,z);
-//         // if(y==d_Ny/2 && z == d_Nz/2)
-//         //     printf("pnxt: %lf, p: %lf, pnxt(-1):\n", d_P_nxt(0,y,z), d_P(0,y,z));
-        
-//         // Extrapolate for right boundary (x = Nx - 1)
-//         // d_P_nxt(d_Nx, y, z) = d_P_nxt(d_Nx - 1,y,z);
-        
-//     }
-// }
-
-// Y boundaries (top and bottom)
-
-// for (int x = -(PADDING + PMLAYE; x < d_Nx + (PADDING + PMLAYER; x++) {
-//     for (int z = -(PADDING + PMLAYER; z < d_Nz + (PADDING + PMLAYER; z++) {
-//         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
-//             // Extrapolate for bottom boundary (y = 0)
-//             d_P_nxt(x, -p, z) = d_P_nxt(x, 0, z) ;
+    // for (int y = -(PADDING + PMLAYER); y < d_Ny + (PADDING + PMLAYER); y++) {
+    //     for (int z = -(PADDING + PMLAYER); z < d_Nz + (PADDING + PMLAYER); z++) {
+    //         // Extrapolate for left boundary (x = 0)
+    //         d_P_nxt(-1, y, z) = (d_P_nxt(0,y,z) - d_P(0,y,z)) * (1) + d_P_nxt(-1,y,z);
+    //         // if(y==d_Ny/2 && z == d_Nz/2)
+    //         //     printf("pnxt: %lf, p: %lf, pnxt(-1):\n", d_P_nxt(0,y,z), d_P(0,y,z));
             
-//             // Extdition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
-//             d_P_nxt(x, d_Ny + p - 1, z) = d_P_nxt(x, d_Ny - 1, z);
-//         }
-//     }
-// }
-
-// // Z boundaries (front and back)
-
-// for (int x = -(PADDING + PMLAYER; x < d_Nx + (PADDING + PMLAYER; x++) {
-//     for (int y = -(PADDING + PMLAYER; y < d_Ny + (PADDING + PMLAYER; y++) {
-//         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
-//             // Extrapolate for front boundary (z = 0)
-//             d_P_nxt(x, y, -p) = d_P_nxt(x, y, 0);
+    //         // Extrapolate for right boundary (x = Nx - 1)
+    //         // d_P_nxt(d_Nx, y, z) = d_P_nxt(d_Nx - 1,y,z);
             
-//             // Extrapolate for back boundary (z = d_Nz - 1)
-//             d_P_nxt(x, y, d_Nz + p - 1) = d_P_nxt(x, y, d_Nz - 1);
-//         }
-//     }
-// }
+    //     }
+    // }
 
-// for (int i = 0; i < d_Nx; i++)
-// {
-//     for (int j = 0; j < d_Ny; j++)
-//     {
-//         for (int k = 0; k < d_Nz; k++)
-//         {
-//             printf("(%d,%d,%d) => %lf,%lf,%lf\n", i,j,k,d_P_prv(i,j,k),d_P(i,j,k),d_P_nxt(i,j,k));
-//         }
+    // Y boundaries (top and bottom)
+
+    // for (int x = -(PADDING + PMLAYE; x < d_Nx + (PADDING + PMLAYER; x++) {
+    //     for (int z = -(PADDING + PMLAYER; z < d_Nz + (PADDING + PMLAYER; z++) {
+    //         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
+    //             // Extrapolate for bottom boundary (y = 0)
+    //             d_P_nxt(x, -p, z) = d_P_nxt(x, 0, z) ;
+                
+    //             // Extdition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
+    //             d_P_nxt(x, d_Ny + p - 1, z) = d_P_nxt(x, d_Ny - 1, z);
+    //         }
+    //     }
+    // }
+
+    // // Z boundaries (front and back)
+
+    // for (int x = -(PADDING + PMLAYER; x < d_Nx + (PADDING + PMLAYER; x++) {
+    //     for (int y = -(PADDING + PMLAYER; y < d_Ny + (PADDING + PMLAYER; y++) {
+    //         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
+    //             // Extrapolate for front boundary (z = 0)
+    //             d_P_nxt(x, y, -p) = d_P_nxt(x, y, 0);
+                
+    //             // Extrapolate for back boundary (z = d_Nz - 1)
+    //             d_P_nxt(x, y, d_Nz + p - 1) = d_P_nxt(x, y, d_Nz - 1);
+    //         }
+    //     }
+    // }
+
+    // for (int i = 0; i < d_Nx; i++)
+    // {
+    //     for (int j = 0; j < d_Ny; j++)
+    //     {
+    //         for (int k = 0; k < d_Nz; k++)
+    //         {
+    //             printf("(%d,%d,%d) => %lf,%lf,%lf\n", i,j,k,d_P_prv(i,j,k),d_P(i,j,k),d_P_nxt(i,j,k));
+    //         }
+            
+    //     }
         
-//     }
-    
-// }
+    // }
 
 
 }
@@ -378,7 +367,7 @@ void simulation_loop( void )
 
         int block_x = 8;
         int block_y = 8;
-        int block_z = 16;
+        int block_z = 8 ;
         dim3 blockSize(block_x,block_y,block_z);
         dim3 gridSize(((Nx + PMLAYER*2) + block_x - 1) / block_x, ((Ny + PMLAYER*2) + block_y - 1) / block_y, ((Nz + PMLAYER*2) + block_z - 1) / block_z);
 
@@ -402,28 +391,31 @@ void simulation_loop( void )
 }
 
 
-extern "C" int simulate_wave(real_t* model_data, int_t n_x, int_t n_y, int_t n_z, double r_dt, int r_max_iter, int r_snapshot_freq, double r_sensor_height, int_t r_model_nx, int_t r_model_ny)
+extern "C" int simulate_wave(simulation_parameters p)
 {
-    dt =r_dt;
-    max_iteration = r_max_iter;
-    snapshot_freq=r_snapshot_freq;
-    sensor_height = r_sensor_height;
+    dt = p.dt;
+    max_iteration = p.max_iter;
+    snapshot_freq= p.snapshot_freq;
+    sensor_height = p.sensor_height;
     // SIM_LZ = MODEL_LZ + RESERVOIR_OFFSET + sensor_height;//need to add height of sensors, but thats a parameter
 
 
-    model_Nx = r_model_nx;
-    model_Ny = r_model_ny;
+    // model_Nx = r_model_nx;
+    // model_Ny = r_model_ny;
     
-    Nx = n_x;
-    Ny = n_y;
-    Nz = n_z;
+    Nx = p.Nx;
+    Ny = p.Ny;
+    Nz = p.Nz;
 
-    
+    sim_Lx = p.sim_Lx;
+    sim_Ly = p.sim_Ly;
+    sim_Lz = p.sim_Lz;
+
 
     //the simulation size is fixed, and resolution is a parameter. the resolution should make sense I guess
-    dx = (double)SIM_LX / Nx; 
-    dy = (double)SIM_LY / Ny;
-    dz = (double)SIM_LZ / Nz;
+    dx = sim_Lx / Nx; 
+    dy = sim_Ly / Ny;
+    dz = sim_Lz / Nz;
     // dx = 0.0001;//I'll need to make sure these are always small enough.
     // dy = 0.0001;
     // dz = 0.0001;
@@ -433,7 +425,7 @@ extern "C" int simulate_wave(real_t* model_data, int_t n_x, int_t n_y, int_t n_z
     //I need to create dx, dy, dz from the resolution given, knowing the shape of the reservoir (which is fixed) and adjust to that
 
     //FIRST PARSE AND SETUP SIMULATION PARAMETERS (done in domain_initialize)
-    model = model_data;
+    model = p.model_data;
 
     init_cuda();
 
@@ -464,10 +456,7 @@ extern "C" int simulate_wave(real_t* model_data, int_t n_x, int_t n_y, int_t n_z
 
 __device__ double K(int_t i, int_t j, int_t k){
 
-    //just water
-    // return WATER_K;
-
-    real_t x = i*d_dx, y=j*d_dy, z = k*d_dz;
+    double x = i*d_dx, y=j*d_dy, z = k*d_dz;
     // if(j < 60){
     //     return WATER_K;
     // }else if(j > 65){
@@ -503,7 +492,7 @@ __device__ double K(int_t i, int_t j, int_t k){
     //     // if(MODEL_AT(x_idx, y_idx) != 0){
     //     //     //printf("model value: %lf\n", MODEL_AT(x_idx, y_idx));
     //     // }
-    //     real_t model_bottom = RESERVOIR_OFFSET - MODEL_AT(x_idx, y_idx);
+    //     double model_bottom = RESERVOIR_OFFSET - MODEL_AT(x_idx, y_idx);
     //     //printf("min: %lf, max: %lf\n", model_bottom, RESERVOIR_OFFSET + MODEL_LZ);
 
 

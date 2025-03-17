@@ -36,7 +36,17 @@ int main(int argc, char** argv){
 
     fclose(model_file);//data is safe in array, we don't need the file anymore
 
-    int err = simulate_wave(model, options->Nx, options->Ny, options->Nz, options->dt, options->max_iteration, options->snapshot_frequency, 0, MODEL_Nx, MODEL_Ny);
+    simulation_parameters p = {
+        .model_data = model,
+        .Nx = options->Nx, .Ny = options->Ny, .Nz = options->Nz,
+        .sim_Lx = options->sim_Lx, .sim_Ly = options->sim_Ly, .sim_Lz = options->sim_Lz,
+        .max_iter = options->max_iteration,
+        .snapshot_freq = options->snapshot_frequency,
+        .dt = options->dt,
+        .sensor_height = 0
+
+    };
+    int err = simulate_wave(p);
 
     return 0;
 }

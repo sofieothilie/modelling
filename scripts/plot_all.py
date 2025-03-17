@@ -8,13 +8,13 @@ from mpl_toolkits.mplot3d import Axes3D
 
 import launch_sim
 
-M = launch_sim.res[1]
-N = launch_sim.res[0]
+M = 1000
+N = 1000
 
 data_folder = "./wave_data"
 
 def plot_data(file_path, output_path):
-    data = np.fromfile(file_path, dtype=np.float64).reshape(N,M)
+    data = np.fromfile(file_path, dtype=np.float32).reshape(N,M)
     shape = (10, 10 * N / M) if M > N else (10 * M / N, 10)#correct ratio
     plt.figure(figsize=shape)
     plt.imshow(data, cmap='jet', origin='lower')
@@ -27,7 +27,7 @@ def plot_data(file_path, output_path):
 
 
 def plot_data_3d(file_path, output_path):
-    data = np.fromfile(file_path, dtype=np.float64).reshape(N, M)
+    data = np.fromfile(file_path, dtype=np.float32).reshape(N, M)
     
     x = np.linspace(0, 1, M)
     y = np.linspace(0, 1, N)
