@@ -8,8 +8,8 @@ from mpl_toolkits.mplot3d import Axes3D
 
 import launch_sim
 
-M = 1000
-N = 1000
+M = 160
+N = 160
 
 data_folder = "./wave_data"
 
@@ -27,7 +27,7 @@ def plot_data(file_path, output_path):
 
 
 def plot_data_3d(file_path, output_path):
-    data = np.fromfile(file_path, dtype=np.float32).reshape(N, M)
+    data = np.fromfile(file_path, dtype=np.float64).reshape(N, M)
     
     x = np.linspace(0, 1, M)
     y = np.linspace(0, 1, N)
@@ -37,6 +37,9 @@ def plot_data_3d(file_path, output_path):
     ax = fig.add_subplot(111, projection='3d')
     
     ax.plot_surface(X, Y, data, cmap='jet', edgecolor='none')
+
+    ax.view_init(elev=40, azim=-80)
+    ax.invert_yaxis()
     
     ax.set_xlabel("X")
     ax.set_ylabel("Y")

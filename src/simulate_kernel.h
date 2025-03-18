@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 typedef int32_t int_t;
-typedef float real_t;
+typedef double real_t;
 
 typedef struct {
     double* model_data; 
