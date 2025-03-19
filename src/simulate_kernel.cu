@@ -17,7 +17,7 @@
 //total size of simulation
 //5x1x1 cm tube of water
 // #define SIM_LX 0.01
-// #define SIM_LY 0.01 
+// #define SIM_LY 0.01
 // #define SIM_LZ 0.01//need to add height of sensors, but thats a parameter
 
 //source and receiver at start and end of tube
@@ -29,9 +29,9 @@
 // #define RECEIVER_Y SOURCE_X
 // #define RECEIVER_Z SOURCE_Z
 
-#define PADDING 1
+#define PADDING 0
 #define PML_WIDTH 20
-#define PML_SHIFT (d_Nx - PML_WIDTH) / 2
+#define PML_SHIFT 80//(1.5*d_Nx - PML_WIDTH) / 2
 
 #define WATER_K 1500
 #define PLASTIC_K 2270
@@ -83,7 +83,7 @@ real_t *d_psi_x, *d_psi_y, *d_psi_z;
 real_t *d_phi_x_nxt, *d_phi_y_nxt, *d_phi_z_nxt;
 real_t *d_psi_x_nxt, *d_psi_y_nxt, *d_psi_z_nxt;
 
- 
+
 
 #define PADDING_BOTTOM_INDEX 0
 #define PADDING_BOTTOM_SIZE (d_Nx + PADDING) * (d_Ny + PADDING) * PADDING
@@ -95,7 +95,10 @@ real_t *d_psi_x_nxt, *d_psi_y_nxt, *d_psi_z_nxt;
 #define PADDING_FRONT_SIZE d_Nx * d_Nz * PADDING
 
 //account for borders, (PADDING: ghost values)
-#define padded_index(i,j,k) (i+PADDING) * ((d_Ny + 2*PADDING) * (d_Nz + 2*PADDING)) + (j+PADDING) * ((d_Nz + 2*PADDING)) + (k+PADDING)
+
+#define per(i, n) ((i+n)%n)
+
+#define padded_index(i,j,k) per(i,d_Nx) * ((d_Ny) * (d_Nz)) + (per(j,d_Ny)) * ((d_Nz)) + (per(k,d_Nz))
 
 #define d_P_prv(i,j,k) d_buffer_prv[padded_index(i,j,k)]
 #define d_P(i,j,k)     d_buffer[padded_index(i,j,k)]
@@ -115,50 +118,50 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 //When calling this, consider the warp geometry to reduce divergence. more info in my notebook
-__device__ int boundary_at(real_t* buffer, int_t i, int_t j, int_t k){
-    //doing some weird indexing to retrieve the correct boundary
+// __device__ int boundary_at(real_t* buffer, int_t i, int_t j, int_t k){
+//     //doing some weird indexing to retrieve the correct boundary
 
-    //assuming x is on the side, y axis pointing you, I guess I could have done better to have the axes in reverse order but ok
+//     //assuming x is on the side, y axis pointing you, I guess I could have done better to have the axes in reverse order but ok
 
-    if(k >= d_Nz)//on the BOTTOM boundary ! axis go downwards
-        {
-            k -= d_Nz;//bring bottom layer back up
-            //dimensions of bottom layer: (Nx + PADDING, Ny + PADDING, PADDING)
-            size_t idx = i * (d_Ny + PADDING) * PADDING + j * PADDING + k;
-            return buffer[PADDING_BOTTOM_INDEX  + idx];
-        }
-    if(i >= d_Nx)//on the SIDE boundary
-        {
-            i -= d_Nx;//bring side layer to left
-            //dimensions of side layer: (PADDING, Ny + PADDING, Nz)
-            size_t idx = i * (d_Ny + PADDING) * d_Nz + j * d_Nz + k;
-            return buffer[PADDING_SIDE_INDEX + idx];
-        }
-    if(j >= d_Ny)//on the FRONT boundary!
-        {
-            j -= d_Ny;//bring front layer back
-            //dimensions of front layer: (Nx, PADDING, Nz)
-            size_t idx = i * PADDING * d_Nz + j * d_Nz + k;
-            return buffer[PADDING_FRONT_INDEX + idx];
-        }
+//     if(k >= d_Nz)//on the BOTTOM boundary ! axis go downwards
+//         {
+//             k -= d_Nz;//bring bottom layer back up
+//             //dimensions of bottom layer: (Nx + PADDING, Ny + PADDING, PADDING)
+//             size_t idx = i * (d_Ny + PADDING) * PADDING + j * PADDING + k;
+//             return buffer[PADDING_BOTTOM_INDEX  + idx];
+//         }
+//     if(i >= d_Nx)//on the SIDE boundary
+//         {
+//             i -= d_Nx;//bring side layer to left
+//             //dimensions of side layer: (PADDING, Ny + PADDING, Nz)
+//             size_t idx = i * (d_Ny + PADDING) * d_Nz + j * d_Nz + k;
+//             return buffer[PADDING_SIDE_INDEX + idx];
+//         }
+//     if(j >= d_Ny)//on the FRONT boundary!
+//         {
+//             j -= d_Ny;//bring front layer back
+//             //dimensions of front layer: (Nx, PADDING, Nz)
+//             size_t idx = i * PADDING * d_Nz + j * d_Nz + k;
+//             return buffer[PADDING_FRONT_INDEX + idx];
+//         }
 
-    //this happens when I'm not in a boundary anymore, what to do then ? I guess that can happen, but will never be processed further, so just ignore this
-    return 0;
-}
+//     //this happens when I'm not in a boundary anymore, what to do then ? I guess that can happen, but will never be processed further, so just ignore this
+//     return 0;
+// }
 
 
-__device__ real_t test_boundary_at(real_t* buffer, int_t i, int_t j, int_t k){
+__device__ real_t buf_at(real_t* buffer, int_t i, int_t j, int_t k){
     i = i - PML_SHIFT;
 
-    if (i < 0 || i >= PML_WIDTH || j < 0 || j >= d_Ny || k < 0 || k >= d_Nz) return 0;//out of bounds, can happen
+    if (i < 0 || i >= PML_WIDTH) return 0;//out of bounds, can happen
 
     // if(i == PML_WIDTH/2 && j == d_Ny/2 && k == d_Nz/2)
     //     printf("then, reading %lf at index %d\n",  buffer[i * (d_Ny * d_Nz) + j * d_Nz + k]);
 
-    return buffer[i * (d_Ny * d_Nz) + j * d_Nz + k];
+    return buffer[i * (d_Ny * d_Nz) + per(j,d_Ny) * d_Nz + per(k,d_Nz)];//access might need to be periodic
 }
 
-__device__ void test_set_boundary_at(real_t* buffer, real_t val, int_t i, int_t j, int_t k){
+__device__ void set_buf(real_t* buffer, real_t val, int_t i, int_t j, int_t k){
     i = i - PML_SHIFT;
 
     if (i < 0 || i >= PML_WIDTH || j < 0 || j >= d_Ny || k < 0 || k >= d_Nz) {
@@ -175,12 +178,22 @@ __device__ void test_set_boundary_at(real_t* buffer, real_t val, int_t i, int_t 
 
 }
 
-__device__ real_t sigma(int i){
-    i = i - PML_SHIFT;//find local coord back; here it only depends on i so its ugly
+__device__ real_t sigma(int_t i, int_t j, int_t k){
+    i = i - PML_SHIFT;//find local coord back; here it only depends on i
 
 
     if (i < 0 || i >= PML_WIDTH) return 0;//try to reduce branching
-    return 2 ;//((real_t) i) / PML_WIDTH;// linear increase, not really good
+    return   1;
+}
+
+__global__ void show_sigma(real_t * d_buffer_prv, real_t * d_buffer){
+    int i = blockIdx.x * blockDim.x + threadIdx.x ;
+    int j = blockIdx.y * blockDim.y + threadIdx.y ;
+    int k = blockIdx.z * blockDim.z + threadIdx.z ;
+
+    if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
+
+    d_P(i,j,k) = d_P_prv(i,j,k) = sigma(i,j,k);
 }
 
 
@@ -217,7 +230,7 @@ void move_buffer_window ()
     temp = d_psi_z;
     d_psi_z = d_psi_z_nxt;
     d_psi_z_nxt = temp;
-    
+
 
 }
 
@@ -241,18 +254,18 @@ void domain_save ( int_t step )
     //     // cudaErrorCheck(cudaMemcpy(&saved_buffer[Nx*i], &(d_buffer[(Nx/2+PADDING) * (Ny+2*PADDING) * (Nz+2*PADDING) + (i+PADDING) * ((Nz + 2*PADDING)) + (0+PADDING)]), Nz*sizeof(real_t), cudaMemcpyDeviceToHost));
     // }
     cudaErrorCheck(cudaMemcpy(saved_buffer, d_buffer, sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING), cudaMemcpyDeviceToHost));
-    
-    
+
+
     // for (int i = 0; i < d_Ny; i++)
     // {
     //     for (int j = 0; j < d_Nz; j++)
     //     {
     //         printf("(%d,%d) => %lf\n", i,j,saved_buffer[i]);
     //     }
-        
+
     // }
 
-    for(int j =0; j<Ny; j++)//take some slice 
+    for(int j =0; j<Ny; j++)//take some slice
     {
         for ( int_t i=0; i<Nx; i++ ){
         int w = fwrite (&saved_buffer[(i+PADDING) * ((Ny + 2*PADDING) * (Nz + 2*PADDING)) + (j+PADDING) * ((Nz + 2*PADDING)) + (Nz/2+PADDING)],
@@ -260,17 +273,17 @@ void domain_save ( int_t step )
         if(w!=1) printf("could write all\n");
         }
     }
-    
+
 
     cudaErrorCheck(cudaDeviceSynchronize());//necessary ?
 
-    
+
     fclose ( out );
 }
 
 // __global__ void fill_buffers(real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
 //     int f= 0;
-//     for(int j =0; j<d_Ny; j++)//take some slice 
+//     for(int j =0; j<d_Ny; j++)//take some slice
 //     {
 //         for ( int_t k=0; k<d_Nz; k++ ){
 //             for ( int_t i=0; i<d_Nx; i++ ){
@@ -282,13 +295,14 @@ void domain_save ( int_t step )
 // }
 
 __global__ void init_buffers(real_t * d_buffer_prv, real_t * d_buffer){
-    int x_center = d_Nx /4;
+    int x_center = 3*d_Nx / 4;
+    int y_center = d_Ny / 2;
     int n = 10;
     for(int i = x_center -n; i <=x_center+n;i++){
-        for(int j = d_Ny/2 - n; j <= d_Ny/2+n;j++){
+        for(int j = y_center - n; j <= y_center+n;j++){
             for(int k = d_Nz/2-n; k <= d_Nz/2 +1;k++){
                 //dst to center
-                real_t delta = ((i - x_center) * (i-x_center) / (double)d_Nx + (j - d_Ny/2)*(j - d_Ny/2) / (double)d_Ny + (k - d_Nz/2)*(k - d_Nz/2)/(double)d_Nz);
+                real_t delta = ((i - x_center) * (i-x_center) / (double)d_Nx + (j - y_center)*(j - y_center) / (double)d_Ny + (k - d_Nz/2)*(k - d_Nz/2)/(double)d_Nz);
                 // printf("%d\n", delta);
                 d_P_prv(i,j,k) = d_P(i,j,k) = exp(-4.0*delta);
             }
@@ -358,9 +372,9 @@ void domain_initialize ()//at this point I can load an optional starting state. 
 
     // cudaErrorCheck(cudaMemcpyToSymbol(d_model_Nx, &model_Nx, sizeof(int_t)));
     // cudaErrorCheck(cudaMemcpyToSymbol(d_model_Ny, &model_Ny, sizeof(int_t)));
-    
 
-    init_buffers<<<1,1>>>(d_buffer_prv, d_buffer);
+    //set a gaussian bump
+    // init_buffers<<<1,1>>>(d_buffer_prv, d_buffer);
 
 
 }
@@ -380,7 +394,7 @@ void domain_finalize ( void )
     cudaFree(d_psi_x);
     cudaFree(d_psi_y);
     cudaFree(d_psi_z);
-    
+
 
     free(saved_buffer);
 }
@@ -424,45 +438,45 @@ __global__ void aux_variable_step(const real_t* d_buffer, real_t* d_phi_x, real_
     //next phi
 
     //notice the parameters I pass to sigma, the factor is the same for all directions, depending only on depth in layer
-    real_t next_phi_x = (- 0.5 / d_dx * (sigma(i-1) * test_boundary_at(d_phi_x, i-1,j,k) + sigma(i) * test_boundary_at(d_phi_x, i,j,k))
-                        - 0.5 / d_dx * (d_P(i+1,j,k) - d_P(i-1,j,k))) * d_dt + test_boundary_at(d_phi_x, i,j,k);
-    real_t next_phi_y = (- 0.5 / d_dy * (sigma(i-1) * test_boundary_at(d_phi_y, i,j-1,k) + sigma(i) * test_boundary_at(d_phi_y, i,j,k))
-                        - 0.5 / d_dy * (d_P(i,j+1,k) - d_P(i,j-1,k))) * d_dt + test_boundary_at(d_phi_y, i,j,k);
-    real_t next_phi_z = ( - 0.5 / d_dz * (sigma(i-1) * test_boundary_at(d_phi_z, i,j,k-1) + sigma(i) * test_boundary_at(d_phi_z, i,j,k))
-                        - 0.5 / d_dz * (d_P(i,j,k+1) - d_P(i,j,k-1))) * d_dt + test_boundary_at(d_phi_z, i,j,k);
+    real_t next_phi_x = (- 0.5 / d_dx * (sigma(i-1,j,k) * buf_at(d_phi_x, i-1,j,k) + sigma(i,j,k) * buf_at(d_phi_x, i,j,k))
+                        - 0.5 / d_dx * (d_P(i+1,j,k) - d_P(i-1,j,k))) * d_dt + buf_at(d_phi_x, i,j,k);
+    real_t next_phi_y = (- 0.5 / d_dy * (sigma(i,j-1,k) * buf_at(d_phi_y, i,j-1,k) + sigma(i,j,k) * buf_at(d_phi_y, i,j,k))
+                        - 0.5 / d_dy * (d_P(i,j+1,k) - d_P(i,j-1,k))) * d_dt + buf_at(d_phi_y, i,j,k);
+    real_t next_phi_z = ( - 0.5 / d_dz * (sigma(i,j,k-1) * buf_at(d_phi_z, i,j,k-1) + sigma(i,j,k) * buf_at(d_phi_z, i,j,k))
+                        - 0.5 / d_dz * (d_P(i,j,k+1) - d_P(i,j,k-1))) * d_dt + buf_at(d_phi_z, i,j,k);
 
-    real_t next_psi_x = (- 0.5 / d_dx * (sigma(i-1) * test_boundary_at(d_psi_x, i,j,k) + sigma(i) * test_boundary_at(d_psi_x,i+1,j,k))
-                        - 0.5 / d_dx * (d_P(i+1,j,k) - d_P(i-1,j,k))) * d_dt + test_boundary_at(d_psi_x,i,j,k);
-    real_t next_psi_y = (- 0.5 / d_dy * (sigma(i-1) * test_boundary_at(d_psi_y, i,j,k) + sigma(i) * test_boundary_at(d_psi_y,i,j+1,k))
-                        - 0.5 / d_dy * (d_P(i,j+1,k) - d_P(i,j-1,k))) * d_dt + test_boundary_at(d_psi_y,i,j,k);
-    real_t next_psi_z = (- 0.5 / d_dz * (sigma(i-1) * test_boundary_at(d_psi_z, i,j,k) + sigma(i) * test_boundary_at(d_psi_z,i,j,k+1))
-                        - 0.5 / d_dz * (d_P(i,j,k+1) - d_P(i,j,k-1))) * d_dt + test_boundary_at(d_psi_z,i,j,k);
+    real_t next_psi_x = (- 0.5 / d_dx * (sigma(i-1,j,k) * buf_at(d_psi_x, i,j,k) + sigma(i,j,k) * buf_at(d_psi_x,i+1,j,k))
+                        - 0.5 / d_dx * (d_P(i+1,j,k) - d_P(i-1,j,k))) * d_dt + buf_at(d_psi_x,i,j,k);
+    real_t next_psi_y = (- 0.5 / d_dy * (sigma(i,j-1,k) * buf_at(d_psi_y, i,j,k) + sigma(i,j,k) * buf_at(d_psi_y,i,j+1,k))
+                        - 0.5 / d_dy * (d_P(i,j+1,k) - d_P(i,j-1,k))) * d_dt + buf_at(d_psi_y,i,j,k);
+    real_t next_psi_z = (- 0.5 / d_dz * (sigma(i,j,k-1) * buf_at(d_psi_z, i,j,k) + sigma(i,j,k) * buf_at(d_psi_z,i,j,k+1))
+                        - 0.5 / d_dz * (d_P(i,j,k+1) - d_P(i,j,k-1))) * d_dt + buf_at(d_psi_z,i,j,k);
 
 
     //write at correct place in memory
-    test_set_boundary_at(d_phi_x_nxt, next_phi_x,i,j,k);
-    test_set_boundary_at(d_phi_y_nxt, next_phi_y,i,j,k);
-    test_set_boundary_at(d_phi_z_nxt, next_phi_z,i,j,k);
+    set_buf(d_phi_x_nxt, next_phi_x,i,j,k);
+    set_buf(d_phi_y_nxt, next_phi_y,i,j,k);
+    set_buf(d_phi_z_nxt, next_phi_z,i,j,k);
 
-    test_set_boundary_at(d_psi_x_nxt, next_psi_x,i,j,k);
-    test_set_boundary_at(d_psi_y_nxt, next_psi_y,i,j,k);
-    test_set_boundary_at(d_psi_z_nxt, next_psi_z,i,j,k);
+    set_buf(d_psi_x_nxt, next_psi_x,i,j,k);
+    set_buf(d_psi_y_nxt, next_psi_y,i,j,k);
+    set_buf(d_psi_z_nxt, next_psi_z,i,j,k);
 
 
 
 
     // if(i == d_Nx/2 && j == d_Ny/2 && k == d_Nz/2){
-    //     printf("-> %lf\n", test_boundary_at(d_phi_x_nxt, i,j,k));
-    //     printf("phix: %lf -> %lf\n", test_boundary_at(d_phi_x, i,j,k), next_phi_x);
+    //     printf("-> %lf\n", buf_at(d_phi_x_nxt, i,j,k));
+    //     printf("phix: %lf -> %lf\n", buf_at(d_phi_x, i,j,k), next_phi_x);
     // }
 
     // printf("calling from %d %d %d\n",i,j,k);
 
-    
+
 
 }
 
-__global__ void time_step (const real_t * const d_buffer_prv, const real_t * const d_buffer, real_t *d_buffer_nxt, real_t* d_phi_x, real_t* d_phi_y, real_t* d_phi_z, real_t* d_psi_x, real_t* d_psi_y, real_t* d_psi_z, double t)
+__global__ void time_step (real_t * d_buffer_prv, real_t * d_buffer, real_t *d_buffer_nxt, real_t* d_phi_x, real_t* d_phi_y, real_t* d_phi_z, real_t* d_psi_x, real_t* d_psi_y, real_t* d_psi_z, double t)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x ;
     int j = blockIdx.y * blockDim.y + threadIdx.y ;
@@ -470,31 +484,31 @@ __global__ void time_step (const real_t * const d_buffer_prv, const real_t * con
 
     if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
 
-    // int sine_x = d_Nx / 4;
+    int sine_x = d_Nx / 4;
 
-    // if(i == sine_x && j == d_Ny/2 && k == d_Nz/2){
-    //     //emit sin from center, at each direction
-    //     double freq = 1;//1MHz
-    //     int n = 1; 
+    if(i == sine_x && j == d_Ny/2 && k == d_Nz/2){
+        //emit sin from center, at each direction
+        double freq = 1e3;//1MHz
+        int n = 1;
 
-    //     if(t < 1./freq){
-    //         double sine = sin(2*M_PI*t*freq);
-    //         // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
-    //         // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
-    //         // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
+        if(t < 1./freq){
+            double sine = sin(2*M_PI*t*freq);
+            // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
+            // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
+            // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
 
-    //         //     d_P(x,y,z) = sine;
-    //         // }}}
-    //         d_P_nxt(sine_x,d_Ny/2,d_Nz/2) = sine;
-    //         return;
-    //     }
-    // }
+            //     d_P(x,y,z) = sine;
+            // }}}
+            d_P_nxt(sine_x,d_Ny/2,d_Nz/2) = sine;
+            return;
+        }
+    }
     // sine_x = 3 * d_Nx / 4;
 
     // if(i == sine_x && j == d_Ny/2 && k == d_Nz/2){
     //     //emit sin from center, at each direction
     //     double freq = 1e3;//1MHz
-    //     int n = 1; 
+    //     int n = 1;
 
     //     if(t < 1./freq){
     //         double sine = sin(2*M_PI*t*freq);
@@ -509,27 +523,58 @@ __global__ void time_step (const real_t * const d_buffer_prv, const real_t * con
     //     }
     // }
 
-    // printf("time step at cell %d %d %d\n", i,j,k);
+    // if(j == d_Ny/2 && k == d_Nz/2 && i == d_Nx/2){
+    //     for(int i = 0; i < PML_WIDTH; i++){
+    //         printf("%.2lf ", buf_at(d_psi_x, i,d_Ny/2, d_Nz/2));
+    //     }
+    //     printf("\n");
+    // }
 
-    real_t tmp      = 1. / (d_dx*d_dx) * (-2*d_P(i,j,k) + d_P(i-1,j,k) + d_P(i+1,j,k)) 
-                    + 1. / (d_dy*d_dy) * (-2*d_P(i,j,k) + d_P(i,j-1,k) + d_P(i,j+1,k)) 
+
+    // Debug prints for buf_at if they are non-zero
+    // if(j == d_Ny/2 && k == d_Nz/2){
+
+    //     double psi_x_val = buf_at(d_psi_x, i, j, k);
+    //     if (psi_x_val != 0) printf("t: %.2lf, buf_at(d_psi_x, %d, %d, %d) = %f\n", t, i, j, k, psi_x_val);
+
+    //     // double phi_x_val = buf_at(d_phi_x, i-1, j, k);
+    //     // if (phi_x_val != 0) printf("buf_at(d_phi_x-1, %d, %d, %d) = %f\n", i-1, j, k, phi_x_val);
+
+    //     // double psi_y_val = buf_at(d_psi_y, i, j+1, k);
+    //     // if (psi_y_val != 0) printf("buf_at(d_psi_y, %d, %d, %d) = %f\n", i, j+1, k, psi_y_val);
+
+    //     // double phi_y_val = buf_at(d_phi_y, i, j-1, k);
+    //     // if (phi_y_val != 0) printf("buf_at(d_phi_y, %d, %d, %d) = %f\n", i, j-1, k, phi_y_val);
+
+    //     // double psi_z_val = buf_at(d_psi_z, i, j, k+1);
+    //     // if (psi_z_val != 0) printf("buf_at(d_psi_z, %d, %d, %d) = %f\n", i, j, k+1, psi_z_val);
+
+    //     // double phi_z_val = buf_at(d_phi_z, i, j, k-1);
+    //     // if (phi_z_val != 0) printf("buf_at(d_phi_z, %d, %d, %d) = %f\n", i, j, k-1, phi_z_val);
+    //     }
+
+
+    real_t tmp      = 1. / (d_dx*d_dx) * (-2*d_P(i,j,k) + d_P(i-1,j,k) + d_P(i+1,j,k))
+                    + 1. / (d_dy*d_dy) * (-2*d_P(i,j,k) + d_P(i,j-1,k) + d_P(i,j+1,k))
                     + 1. / (d_dz*d_dz) * (-2*d_P(i,j,k) + d_P(i,j,k-1) + d_P(i,j,k+1))
-                    + 1. / (d_dx*d_dx) * (sigma(i) * test_boundary_at(d_psi_x, i-1,j,k) - sigma(i-1) * test_boundary_at(d_phi_x, i-1,j,k))
-                    + 1. / (d_dy*d_dy) * (sigma(i) * test_boundary_at(d_psi_y, i,j-1,k) - sigma(i-1) * test_boundary_at(d_phi_y, i,j-1,k))
-                    + 1. / (d_dz*d_dz) * (sigma(i) * test_boundary_at(d_psi_z, i,j,k-1) - sigma(i-1) * test_boundary_at(d_phi_z, i,j,k-1));
-    d_P_nxt(i,j,k) = tmp * d_dt * d_dt + 2 * d_P(i,j,k) - d_P_prv(i,j,k);                                 
+                    + 1. / (d_dx*d_dx) * (sigma(i,j,k) * buf_at(d_psi_x, i+1,j,k) - sigma(i-1,j,k) * buf_at(d_phi_x, i-1,j,k))
+                    + 1. / (d_dy*d_dy) * (sigma(i,j,k) * buf_at(d_psi_y, i,j+1,k) - sigma(i,j-1,k) * buf_at(d_phi_y, i,j-1,k))
+                    + 1. / (d_dz*d_dz) * (sigma(i,j,k) * buf_at(d_psi_z, i,j,k+1) - sigma(i,j,k-1) * buf_at(d_phi_z, i,j,k-1));
 
-    
+
+    d_P_nxt(i,j,k) = tmp * d_dt * d_dt + 2 * d_P(i,j,k) - d_P_prv(i,j,k);
+
+
     // if(i == d_Nx/2 && j == d_Ny/2 && k == d_Nz/2){
-    //     //printf("-> %lf\n", test_boundary_at(d_phi_x_nxt, i,j,k));
-    //     printf("phix: %lf\n", test_boundary_at(d_phi_x, i,j,k));
+    //     //printf("-> %lf\n", buf_at(d_phi_x_nxt, i,j,k));
+    //     printf("phix: %lf\n", buf_at(d_phi_x, i,j,k));
     // }
 
 
 }
 
 
-__global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_buffer, real_t *d_buffer_nxt){
+__global__ void boundary_condition (real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt){
     // X boundaries (left and right)
 
     // for (int y = -PADDING; y < d_Ny + PADDING; y++) {
@@ -538,10 +583,10 @@ __global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_
     //         d_P_nxt(-1, y, z) = (d_P_nxt(0,y,z) - d_P(0,y,z)) * (1) + d_P_nxt(-1,y,z);
     //         // if(y==d_Ny/2 && z == d_Nz/2)
     //         //     printf("pnxt: %lf, p: %lf, pnxt(-1):\n", d_P_nxt(0,y,z), d_P(0,y,z));
-            
+
     //         // Extrapolate for right boundary (x = Nx - 1)
     //         // d_P_nxt(d_Nx, y, z) = d_P_nxt(d_Nx - 1,y,z);
-            
+
     //     }
     // }
 
@@ -552,7 +597,7 @@ __global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_
     //         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
     //             // Extrapolate for bottom boundary (y = 0)
     //             d_P_nxt(x, -p, z) = d_P_nxt(x, 0, z) ;
-                
+
     //             // Extdition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
     //             d_P_nxt(x, d_Ny + p - 1, z) = d_P_nxt(x, d_Ny - 1, z);
     //         }
@@ -566,7 +611,7 @@ __global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_
     //         for (int p = 1; p <= (PADDING + PMLAYER; p++) {
     //             // Extrapolate for front boundary (z = 0)
     //             d_P_nxt(x, y, -p) = d_P_nxt(x, y, 0);
-                
+
     //             // Extrapolate for back boundary (z = d_Nz - 1)
     //             d_P_nxt(x, y, d_Nz + p - 1) = d_P_nxt(x, y, d_Nz - 1);
     //         }
@@ -581,9 +626,9 @@ __global__ void boundary_condition (const real_t *d_buffer_prv, const real_t *d_
     //         {
     //             printf("(%d,%d,%d) => %lf,%lf,%lf\n", i,j,k,d_P_prv(i,j,k),d_P(i,j,k),d_P_nxt(i,j,k));
     //         }
-            
+
     //     }
-        
+
     // }
 
 
@@ -623,9 +668,12 @@ void simulation_loop( void )
         // printf("grid size: %u %u %u\n", gridSize.x, gridSize.y, gridSize.z);
         // printf("block size: %u %u %u\n", blockSize.x, blockSize.y, blockSize.z);
 
+        // show_sigma<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer)
+
         time_step<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer, d_buffer_nxt, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z, iteration*dt);
+        // cudaDeviceSynchronize();
         aux_variable_step<<<pml_gridSize, blockSize>>>(d_buffer, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z, d_phi_x_nxt, d_phi_y_nxt, d_phi_z_nxt, d_psi_x_nxt, d_psi_y_nxt, d_psi_z_nxt);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
 
         boundary_condition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
         cudaDeviceSynchronize();
@@ -652,7 +700,7 @@ extern "C" int simulate_wave(simulation_parameters p)
 
     // model_Nx = r_model_nx;
     // model_Ny = r_model_ny;
-    
+
     Nx = p.Nx;
     Ny = p.Ny;
     Nz = p.Nz;
@@ -663,7 +711,7 @@ extern "C" int simulate_wave(simulation_parameters p)
 
 
     //the simulation size is fixed, and resolution is a parameter. the resolution should make sense I guess
-    dx = sim_Lx / Nx; 
+    dx = sim_Lx / Nx;
     dy = sim_Ly / Ny;
     dz = sim_Lz / Nz;
     // dx = 0.0001;//I'll need to make sure these are always small enough.
@@ -688,16 +736,16 @@ extern "C" int simulate_wave(simulation_parameters p)
     gettimeofday(&t_start, NULL);
     simulation_loop();
     gettimeofday(&t_end, NULL);
-    
+
     printf("Total elapsed time: %lf seconds\n", WALLTIME(t_end) - WALLTIME(t_start));
-    
-    
-    
+
+
+
 
     // Clean up and shut down
     domain_finalize();
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
-    
+
 
     exit ( EXIT_SUCCESS );
 }
@@ -725,7 +773,7 @@ __device__ double K(int_t i, int_t j, int_t k){
 
     //printf("x = %.4f, y = %.4f, z = %.4f\n", x, y, z);
 
-    //1. am I (xy) on the model ? 
+    //1. am I (xy) on the model ?
     // if(RESERVOIR_OFFSET < x && x < MODEL_LX + RESERVOIR_OFFSET &&
     //     RESERVOIR_OFFSET < y && y < MODEL_LY + RESERVOIR_OFFSET){
     //     //yes!
@@ -755,7 +803,7 @@ __device__ double K(int_t i, int_t j, int_t k){
     //     //     //printf("in the model !\n");
     //     //     return PLASTIC_K;
     //     // }
-        
+
     // }
 
     return WATER_K;

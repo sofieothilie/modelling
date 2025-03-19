@@ -8,8 +8,8 @@ from mpl_toolkits.mplot3d import Axes3D
 
 import launch_sim
 
-M = 160
-N = 160
+M = 100
+N = 100
 
 data_folder = "./wave_data"
 
