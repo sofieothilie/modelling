@@ -73,7 +73,8 @@ real_t *saved_buffer = NULL;
 #define MODEL_AT(i,j) model[i + j*MODEL_NX]
 
 //CUDA elements
-real_t *d_buffer_prv, *d_buffer, *d_buffer_nxt;
+// real_t *d_buffer_prv, *d_buffer, *d_buffer_nxt;
+real_t *d_buffer_prv_prv, *d_buffer_prv, *d_buffer;
 
 //the indexing is weird, because these values only exist for the boundaries, so looks like a corner, of depth PADDING
 real_t *d_phi_x, *d_phi_y, *d_phi_z;
@@ -100,6 +101,7 @@ real_t *d_psi_x_nxt, *d_psi_y_nxt, *d_psi_z_nxt;
 
 #define padded_index(i,j,k) per(i,d_Nx) * ((d_Ny) * (d_Nz)) + (per(j,d_Ny)) * ((d_Nz)) + (per(k,d_Nz))
 
+#define d_P_prv_prv(i,j,k) d_buffer_prv_prv[padded_index(i,j,k)]
 #define d_P_prv(i,j,k) d_buffer_prv[padded_index(i,j,k)]
 #define d_P(i,j,k)     d_buffer[padded_index(i,j,k)]
 #define d_P_nxt(i,j,k) d_buffer_nxt[padded_index(i,j,k)]
@@ -201,10 +203,10 @@ __global__ void show_sigma(real_t * d_buffer_prv, real_t * d_buffer){
 void move_buffer_window ()
 {
 
-    real_t *temp = d_buffer_prv;
+    real_t *temp = d_buffer_prv_prv;
+    d_buffer_prv_prv = d_buffer_prv;
     d_buffer_prv = d_buffer;
-    d_buffer = d_buffer_nxt;
-    d_buffer_nxt = temp;
+    d_buffer = temp;
 
     //move auxiliary variables, I guess
     temp = d_phi_x;
@@ -302,7 +304,7 @@ __global__ void init_buffers(real_t * d_buffer_prv, real_t * d_buffer){
         for(int j = y_center - n; j <= y_center+n;j++){
             for(int k = d_Nz/2-n; k <= d_Nz/2 +1;k++){
                 //dst to center
-                real_t delta = ((i - x_center) * (i-x_center) / (double)d_Nx + (j - y_center)*(j - y_center) / (double)d_Ny + (k - d_Nz/2)*(k - d_Nz/2)/(double)d_Nz);
+                real_t delta = ((i - x_center) * (i-x_center) / (double)d_Nx + (j - y_center)*(j - y_center) / (double)d_Ny + (k - d_Nz/2.)*(k - d_Nz/2.)/(double)d_Nz);
                 // printf("%d\n", delta);
                 d_P_prv(i,j,k) = d_P(i,j,k) = exp(-4.0*delta);
             }
@@ -323,9 +325,9 @@ void domain_initialize ()//at this point I can load an optional starting state. 
 
     // //alloc memory in GPU
     size_t mem_size =  sizeof(real_t) * (Nx + 2*PADDING)*(Ny + 2*PADDING)*(Nz + 2*PADDING);
+    cudaErrorCheck(cudaMalloc(&d_buffer_prv_prv, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer_prv, mem_size));
     cudaErrorCheck(cudaMalloc(&d_buffer, mem_size));
-    cudaErrorCheck(cudaMalloc(&d_buffer_nxt, mem_size));
     // printf("alloced %zu for P\n", mem_size);
         size_t border_size = PML_WIDTH * Ny * Nz * sizeof(real_t);
         cudaErrorCheck(cudaMalloc(&d_phi_x, border_size));
@@ -345,9 +347,9 @@ void domain_initialize ()//at this point I can load an optional starting state. 
         cudaErrorCheck(cudaMalloc(&d_psi_z_nxt, border_size));
 
     //set it all to 0 (memset only works for int!)
+    cudaErrorCheck(cudaMemset(d_buffer_prv_prv, 0, mem_size));
     cudaErrorCheck(cudaMemset(d_buffer_prv, 0, mem_size));
     cudaErrorCheck(cudaMemset(d_buffer,     0, mem_size));
-    cudaErrorCheck(cudaMemset(d_buffer_nxt, 0, mem_size));
 
         cudaErrorCheck(cudaMemset(d_phi_x_nxt, 0, border_size));
         cudaErrorCheck(cudaMemset(d_phi_y_nxt, 0, border_size));
@@ -384,8 +386,8 @@ void domain_initialize ()//at this point I can load an optional starting state. 
 void domain_finalize ( void )
 {
     cudaFree(d_buffer_prv);
+    cudaFree(d_buffer_prv);
     cudaFree(d_buffer);
-    cudaFree(d_buffer_nxt);
 
     cudaFree(d_phi_x);
     cudaFree(d_phi_y);
@@ -476,6 +478,32 @@ __global__ void aux_variable_step(const real_t* d_buffer, real_t* d_phi_x, real_
 
 }
 
+__global__ void emit_source(real_t *d_buffer, double t) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x ;
+    int j = blockIdx.y * blockDim.y + threadIdx.y ;
+    int k = blockIdx.z * blockDim.z + threadIdx.z ;
+
+    if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;//out of bounds. maybe try better way to deal with this, that induce less waste
+
+    int sine_x = d_Nx / 4;
+
+    if(i == sine_x && j == d_Ny/2 && k == d_Nz/2){
+        //emit sin from center, at each direction
+        double freq = 1e6;//1MHz
+        int n = 1;
+
+            double sine = sin(2*M_PI*t*freq);
+            // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
+            // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
+            // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
+
+            //     d_P(x,y,z) = sine;
+            // }}}
+            d_P(sine_x,d_Ny/2,d_Nz/2) = sine;
+            return;
+    }
+}
+
 __global__ void time_step (real_t * d_buffer_prv, real_t * d_buffer, real_t *d_buffer_nxt, real_t* d_phi_x, real_t* d_phi_y, real_t* d_phi_z, real_t* d_psi_x, real_t* d_psi_y, real_t* d_psi_z, double t)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x ;
@@ -491,7 +519,6 @@ __global__ void time_step (real_t * d_buffer_prv, real_t * d_buffer, real_t *d_b
         double freq = 1e3;//1MHz
         int n = 1;
 
-        if(t < 1./freq){
             double sine = sin(2*M_PI*t*freq);
             // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
             // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
@@ -501,7 +528,6 @@ __global__ void time_step (real_t * d_buffer_prv, real_t * d_buffer, real_t *d_b
             // }}}
             d_P_nxt(sine_x,d_Ny/2,d_Nz/2) = sine;
             return;
-        }
     }
     // sine_x = 3 * d_Nx / 4;
 
@@ -554,6 +580,7 @@ __global__ void time_step (real_t * d_buffer_prv, real_t * d_buffer, real_t *d_b
     //     }
 
 
+    /*
     real_t tmp      = 1. / (d_dx*d_dx) * (-2*d_P(i,j,k) + d_P(i-1,j,k) + d_P(i+1,j,k))
                     + 1. / (d_dy*d_dy) * (-2*d_P(i,j,k) + d_P(i,j-1,k) + d_P(i,j+1,k))
                     + 1. / (d_dz*d_dz) * (-2*d_P(i,j,k) + d_P(i,j,k-1) + d_P(i,j,k+1))
@@ -563,6 +590,7 @@ __global__ void time_step (real_t * d_buffer_prv, real_t * d_buffer, real_t *d_b
 
 
     d_P_nxt(i,j,k) = tmp * d_dt * d_dt + 2 * d_P(i,j,k) - d_P_prv(i,j,k);
+    */
 
 
     // if(i == d_Nx/2 && j == d_Ny/2 && k == d_Nz/2){
@@ -634,6 +662,51 @@ __global__ void boundary_condition (real_t *d_buffer_prv, real_t *d_buffer, real
 
 }
 
+__device__ real_t gauss_seidel_formula(int i, int j, int k, real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_prv) {
+    return (d_dt * d_dt
+                * (d_dx * d_dx * d_dy * d_dy
+                       * ((K(i, j, k - 1) - K(i, j, k + 1)) * (d_P(i, j, k - 1) - d_P(i, j, k + 1))
+                          + 2 * (-2 * d_P(i, j, k) + d_P(i, j, k - 1) + d_P(i, j, k + 1))
+                                * K(i, j, k))
+                   + d_dx * d_dx * d_dz * d_dz
+                         * ((K(i, j - 1, k) - K(i, j + 1, k))
+                                * (d_P(i, j - 1, k) - d_P(i, j + 1, k))
+                            + 2 * (-2 * d_P(i, j, k) + d_P(i, j - 1, k) + d_P(i, j + 1, k))
+                                  * K(i, j, k))
+                   + d_dy * d_dy * d_dz * d_dz
+                         * ((K(i - 1, j, k) - K(i + 1, j, k))
+                                * (d_P(i - 1, j, k) - d_P(i + 1, j, k))
+                            + 2 * (-2 * d_P(i, j, k) + d_P(i - 1, j, k) + d_P(i + 1, j, k))
+                                  * K(i, j, k)))
+                * K(i, j, k)
+            + 2 * d_dx * d_dx * d_dy * d_dy * d_dz * d_dz
+                  * (2 * d_P_prv(i, j, k) - d_P_prv_prv(i, j, k)))
+         / (2 * d_dx * d_dx * d_dy * d_dy * d_dz * d_dz);
+}
+
+__global__ void gauss_seidel_red(real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_prv){
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;
+
+    if((i + j + k) % 2 == 0) {
+        d_P(i,j,k) = gauss_seidel_formula(i,j,k, d_buffer, d_buffer_prv, d_buffer_prv_prv);
+    }
+}
+
+__global__ void gauss_seidel_black(real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_prv){
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if(i >= d_Nx || j >= d_Ny || k >= d_Nz) return;
+
+    if((i + j + k) % 2 == 1) {
+        d_P(i,j,k) = gauss_seidel_formula(i,j,k, d_buffer, d_buffer_prv, d_buffer_prv_prv);
+    }
+}
 
 
 // Main time integration.
@@ -670,13 +743,23 @@ void simulation_loop( void )
 
         // show_sigma<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer)
 
-        time_step<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer, d_buffer_nxt, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z, iteration*dt);
+        //time_step<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer_nxt, d_buffer, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z, iteration*dt);
+        emit_source<<<gridSize, blockSize>>>(d_buffer_prv, iteration*dt);
+        for(size_t iter = 0; iter < 5; iter++) {
+            gauss_seidel_red<<<gridSize, blockSize>>>(d_buffer, d_buffer_prv, d_buffer_prv_prv);
+            gauss_seidel_black<<<gridSize, blockSize>>>(d_buffer, d_buffer_prv, d_buffer_prv_prv);
+        }
+        // void *args[] = {
+        //     (void*) d_buffer,
+        // };
+        // cudaErrorCheck(cudaLaunchCooperativeKernel((void *) gauss_seidel, gridSize, blockSize, args));
+        // jacobi<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer);
         // cudaDeviceSynchronize();
-        aux_variable_step<<<pml_gridSize, blockSize>>>(d_buffer, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z, d_phi_x_nxt, d_phi_y_nxt, d_phi_z_nxt, d_psi_x_nxt, d_psi_y_nxt, d_psi_z_nxt);
+        // aux_variable_step<<<pml_gridSize, blockSize>>>(d_buffer, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z, d_phi_x_nxt, d_phi_y_nxt, d_phi_z_nxt, d_psi_x_nxt, d_psi_y_nxt, d_psi_z_nxt);
         // cudaDeviceSynchronize();
 
-        boundary_condition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
-        cudaDeviceSynchronize();
+        // boundary_condition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
+        // cudaDeviceSynchronize();
 
 
         // printf("prv phix %p, cur phix %p\n", d_phi_x, d_phi_x_nxt);
@@ -684,7 +767,7 @@ void simulation_loop( void )
 
         // Rotate the time step buffers
         move_buffer_window();
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
     }
 }
 
@@ -753,6 +836,7 @@ extern "C" int simulate_wave(simulation_parameters p)
 
 
 __device__ double K(int_t i, int_t j, int_t k){
+    return WATER_K;
 
     double x = i*d_dx, y=j*d_dy, z = k*d_dz;
     printf("K is called, thats not right\n");

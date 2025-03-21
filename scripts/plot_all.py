@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 from concurrent.futures import ProcessPoolExecutor
 from mpl_toolkits.mplot3d import Axes3D
 
-import launch_sim
-
 M = 100
 N = 100
 
