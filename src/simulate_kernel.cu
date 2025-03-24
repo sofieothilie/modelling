@@ -30,7 +30,7 @@
 
 #define PADDING 0
 #define PML_WIDTH 20
-#define PML_SHIFT 80 //(1.5*d_Nx - PML_WIDTH) / 2
+#define PML_SHIFT 40 //(1.5*d_Nx - PML_WIDTH) / 2
 
 #define WATER_K 1500
 #define PLASTIC_K 2270
@@ -74,12 +74,12 @@ real_t *d_buffer_prv_prv, *d_buffer_prv, *d_buffer;
 
 // the indexing is weird, because these values only exist for the boundaries, so looks like a
 // corner, of depth PADDING
-real_t *d_phi_x, *d_phi_y, *d_phi_z;
-real_t *d_psi_x, *d_psi_y, *d_psi_z;
+real_t *d_phi_x_prv, *d_phi_y_prv, *d_phi_z_prv;
+real_t *d_psi_x_prv, *d_psi_y_prv, *d_psi_z_prv;
 
 // might be possible to avoid using this, but it would be a mess
-real_t *d_phi_x_nxt, *d_phi_y_nxt, *d_phi_z_nxt;
-real_t *d_psi_x_nxt, *d_psi_y_nxt, *d_psi_z_nxt;
+real_t *d_phi_x, *d_phi_y, *d_phi_z;
+real_t *d_psi_x, *d_psi_y, *d_psi_z;
 
 #define PADDING_BOTTOM_INDEX 0
 #define PADDING_BOTTOM_SIZE (d_Nx + PADDING) * (d_Ny + PADDING) * PADDING
@@ -101,7 +101,6 @@ real_t *d_psi_x_nxt, *d_psi_y_nxt, *d_psi_z_nxt;
 #define d_P_prv_prv(i, j, k) d_buffer_prv_prv[padded_index(i, j, k)]
 #define d_P_prv(i, j, k) d_buffer_prv[padded_index(i, j, k)]
 #define d_P(i, j, k) d_buffer[padded_index(i, j, k)]
-#define d_P_nxt(i, j, k) d_buffer_nxt[padded_index(i, j, k)]
 
 __constant__ int_t d_Nx, d_Ny, d_Nz;
 __constant__ double d_dt, d_dx, d_dy, d_dz;
@@ -186,7 +185,7 @@ __device__ real_t sigma(int_t i, int_t j, int_t k) {
 
     if(i < 0 || i >= PML_WIDTH)
         return 0; // try to reduce branching
-    return 1;
+    return 0.001;
 }
 
 __global__ void show_sigma(real_t *d_buffer_prv, real_t *d_buffer) {
@@ -209,29 +208,29 @@ void move_buffer_window() {
     d_buffer = temp;
 
     // move auxiliary variables, I guess
-    temp = d_phi_x;
-    d_phi_x = d_phi_x_nxt;
-    d_phi_x_nxt = temp;
+    temp = d_phi_x_prv;
+    d_phi_x_prv = d_phi_x;
+    d_phi_x = temp;
 
-    temp = d_phi_y;
-    d_phi_y = d_phi_y_nxt;
-    d_phi_y_nxt = temp;
+    temp = d_phi_y_prv;
+    d_phi_y_prv = d_phi_y;
+    d_phi_y = temp;
 
-    temp = d_phi_z;
-    d_phi_z = d_phi_z_nxt;
-    d_phi_z_nxt = temp;
+    temp = d_phi_z_prv;
+    d_phi_z_prv = d_phi_z;
+    d_phi_z = temp;
 
-    temp = d_psi_x;
-    d_psi_x = d_psi_x_nxt;
-    d_psi_x_nxt = temp;
+    temp = d_psi_x_prv;
+    d_psi_x_prv = d_psi_x;
+    d_psi_x = temp;
 
-    temp = d_psi_y;
-    d_psi_y = d_psi_y_nxt;
-    d_psi_y_nxt = temp;
+    temp = d_psi_y_prv;
+    d_psi_y_prv = d_psi_y;
+    d_psi_y = temp;
 
-    temp = d_psi_z;
-    d_psi_z = d_psi_z_nxt;
-    d_psi_z_nxt = temp;
+    temp = d_psi_z_prv;
+    d_psi_z_prv = d_psi_z;
+    d_psi_z = temp;
 }
 
 // // Save the present time step in a numbered file under 'data/'
@@ -337,6 +336,14 @@ void domain_initialize() // at this point I can load an optional starting state.
     cudaErrorCheck(cudaMalloc(&d_buffer, mem_size));
     // printf("alloced %zu for P\n", mem_size);
     size_t border_size = PML_WIDTH * Ny * Nz * sizeof(real_t);
+    cudaErrorCheck(cudaMalloc(&d_phi_x_prv, border_size));
+    cudaErrorCheck(cudaMalloc(&d_phi_y_prv, border_size));
+    cudaErrorCheck(cudaMalloc(&d_phi_z_prv, border_size));
+
+    cudaErrorCheck(cudaMalloc(&d_psi_x_prv, border_size));
+    cudaErrorCheck(cudaMalloc(&d_psi_y_prv, border_size));
+    cudaErrorCheck(cudaMalloc(&d_psi_z_prv, border_size));
+
     cudaErrorCheck(cudaMalloc(&d_phi_x, border_size));
     cudaErrorCheck(cudaMalloc(&d_phi_y, border_size));
     cudaErrorCheck(cudaMalloc(&d_phi_z, border_size));
@@ -345,26 +352,18 @@ void domain_initialize() // at this point I can load an optional starting state.
     cudaErrorCheck(cudaMalloc(&d_psi_y, border_size));
     cudaErrorCheck(cudaMalloc(&d_psi_z, border_size));
 
-    cudaErrorCheck(cudaMalloc(&d_phi_x_nxt, border_size));
-    cudaErrorCheck(cudaMalloc(&d_phi_y_nxt, border_size));
-    cudaErrorCheck(cudaMalloc(&d_phi_z_nxt, border_size));
-
-    cudaErrorCheck(cudaMalloc(&d_psi_x_nxt, border_size));
-    cudaErrorCheck(cudaMalloc(&d_psi_y_nxt, border_size));
-    cudaErrorCheck(cudaMalloc(&d_psi_z_nxt, border_size));
-
     // set it all to 0 (memset only works for int!)
     cudaErrorCheck(cudaMemset(d_buffer_prv_prv, 0, mem_size));
     cudaErrorCheck(cudaMemset(d_buffer_prv, 0, mem_size));
     cudaErrorCheck(cudaMemset(d_buffer, 0, mem_size));
 
-    cudaErrorCheck(cudaMemset(d_phi_x_nxt, 0, border_size));
-    cudaErrorCheck(cudaMemset(d_phi_y_nxt, 0, border_size));
-    cudaErrorCheck(cudaMemset(d_phi_z_nxt, 0, border_size));
+    cudaErrorCheck(cudaMemset(d_phi_x, 0, border_size));
+    cudaErrorCheck(cudaMemset(d_phi_y, 0, border_size));
+    cudaErrorCheck(cudaMemset(d_phi_z, 0, border_size));
 
-    cudaErrorCheck(cudaMemset(d_psi_x_nxt, 0, border_size));
-    cudaErrorCheck(cudaMemset(d_psi_y_nxt, 0, border_size));
-    cudaErrorCheck(cudaMemset(d_psi_z_nxt, 0, border_size));
+    cudaErrorCheck(cudaMemset(d_psi_x, 0, border_size));
+    cudaErrorCheck(cudaMemset(d_psi_y, 0, border_size));
+    cudaErrorCheck(cudaMemset(d_psi_z, 0, border_size));
 
     cudaErrorCheck(cudaMemcpyToSymbol(d_Nx, &Nx, sizeof(int_t)));
     cudaErrorCheck(cudaMemcpyToSymbol(d_Ny, &Ny, sizeof(int_t)));
@@ -392,52 +391,32 @@ void domain_finalize(void) {
     cudaFree(d_buffer_prv);
     cudaFree(d_buffer);
 
-    cudaFree(d_phi_x);
-    cudaFree(d_phi_y);
-    cudaFree(d_phi_z);
+    cudaFree(d_phi_x_prv);
+    cudaFree(d_phi_y_prv);
+    cudaFree(d_phi_z_prv);
 
-    cudaFree(d_psi_x);
-    cudaFree(d_psi_y);
-    cudaFree(d_psi_z);
+    cudaFree(d_psi_x_prv);
+    cudaFree(d_psi_y_prv);
+    cudaFree(d_psi_z_prv);
 
     free(saved_buffer);
 }
 
-// __global__ void emit_sine(double t, real_t *d_buffer_prv, real_t *d_buffer, real_t
-// *d_buffer_nxt){
-//     //emit sin from center, at each direction
-//     double freq = 1e6;//1MHz
-//     int n = 1;__global__ void fill_buffers(real_t *d_buffer_prv, real_t *d_buffer, real_t
-//     *d_buffer_nxt){
-
-//     if(t < 1./freq){
-//         double sine = sin(2*M_PI*t*freq);
-//         // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
-//         // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
-//         // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
-
-//         //     d_P(x,y,z) = sine;
-//         // }}}
-//         d_P(d_Nx/2,d_Ny/2,d_Nz/2) += sine;
-
-//     }
-// }
-
 // I could split phi and psi because they dont touch exactly the same indices (at border), so less
 // warping
 __global__ void aux_variable_step(const real_t *d_buffer,
+                                  real_t *d_phi_x_prv,
+                                  real_t *d_phi_y_prv,
+                                  real_t *d_phi_z_prv,
+                                  real_t *d_psi_x_prv,
+                                  real_t *d_psi_y_prv,
+                                  real_t *d_psi_z_prv,
                                   real_t *d_phi_x,
                                   real_t *d_phi_y,
                                   real_t *d_phi_z,
                                   real_t *d_psi_x,
                                   real_t *d_psi_y,
-                                  real_t *d_psi_z,
-                                  real_t *d_phi_x_nxt,
-                                  real_t *d_phi_y_nxt,
-                                  real_t *d_phi_z_nxt,
-                                  real_t *d_psi_x_nxt,
-                                  real_t *d_psi_y_nxt,
-                                  real_t *d_psi_z_nxt) {
+                                  real_t *d_psi_z) {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x
           + PML_SHIFT; // local coord passed, turned to global coordinates
@@ -457,55 +436,55 @@ __global__ void aux_variable_step(const real_t *d_buffer,
     // notice the parameters I pass to sigma, the factor is the same for all directions, depending
     // only on depth in layer
     real_t next_phi_x = (-0.5 / d_dx
-                             * (sigma(i - 1, j, k) * buf_at(d_phi_x, i - 1, j, k)
-                                + sigma(i, j, k) * buf_at(d_phi_x, i, j, k))
+                             * (sigma(i - 1, j, k) * buf_at(d_phi_x_prv, i - 1, j, k)
+                                + sigma(i, j, k) * buf_at(d_phi_x_prv, i, j, k))
                          - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
                           * d_dt
-                      + buf_at(d_phi_x, i, j, k);
+                      + buf_at(d_phi_x_prv, i, j, k);
     real_t next_phi_y = (-0.5 / d_dy
-                             * (sigma(i, j - 1, k) * buf_at(d_phi_y, i, j - 1, k)
-                                + sigma(i, j, k) * buf_at(d_phi_y, i, j, k))
+                             * (sigma(i, j - 1, k) * buf_at(d_phi_y_prv, i, j - 1, k)
+                                + sigma(i, j, k) * buf_at(d_phi_y_prv, i, j, k))
                          - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
                           * d_dt
-                      + buf_at(d_phi_y, i, j, k);
+                      + buf_at(d_phi_y_prv, i, j, k);
     real_t next_phi_z = (-0.5 / d_dz
-                             * (sigma(i, j, k - 1) * buf_at(d_phi_z, i, j, k - 1)
-                                + sigma(i, j, k) * buf_at(d_phi_z, i, j, k))
+                             * (sigma(i, j, k - 1) * buf_at(d_phi_z_prv, i, j, k - 1)
+                                + sigma(i, j, k) * buf_at(d_phi_z_prv, i, j, k))
                          - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
                           * d_dt
-                      + buf_at(d_phi_z, i, j, k);
+                      + buf_at(d_phi_z_prv, i, j, k);
 
     real_t next_psi_x = (-0.5 / d_dx
-                             * (sigma(i - 1, j, k) * buf_at(d_psi_x, i, j, k)
-                                + sigma(i, j, k) * buf_at(d_psi_x, i + 1, j, k))
+                             * (sigma(i - 1, j, k) * buf_at(d_psi_x_prv, i, j, k)
+                                + sigma(i, j, k) * buf_at(d_psi_x_prv, i + 1, j, k))
                          - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
                           * d_dt
-                      + buf_at(d_psi_x, i, j, k);
+                      + buf_at(d_psi_x_prv, i, j, k);
     real_t next_psi_y = (-0.5 / d_dy
-                             * (sigma(i, j - 1, k) * buf_at(d_psi_y, i, j, k)
-                                + sigma(i, j, k) * buf_at(d_psi_y, i, j + 1, k))
+                             * (sigma(i, j - 1, k) * buf_at(d_psi_y_prv, i, j, k)
+                                + sigma(i, j, k) * buf_at(d_psi_y_prv, i, j + 1, k))
                          - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
                           * d_dt
-                      + buf_at(d_psi_y, i, j, k);
+                      + buf_at(d_psi_y_prv, i, j, k);
     real_t next_psi_z = (-0.5 / d_dz
-                             * (sigma(i, j, k - 1) * buf_at(d_psi_z, i, j, k)
-                                + sigma(i, j, k) * buf_at(d_psi_z, i, j, k + 1))
+                             * (sigma(i, j, k - 1) * buf_at(d_psi_z_prv, i, j, k)
+                                + sigma(i, j, k) * buf_at(d_psi_z_prv, i, j, k + 1))
                          - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
                           * d_dt
-                      + buf_at(d_psi_z, i, j, k);
+                      + buf_at(d_psi_z_prv, i, j, k);
 
     // write at correct place in memory
-    set_buf(d_phi_x_nxt, next_phi_x, i, j, k);
-    set_buf(d_phi_y_nxt, next_phi_y, i, j, k);
-    set_buf(d_phi_z_nxt, next_phi_z, i, j, k);
+    set_buf(d_phi_x, next_phi_x, i, j, k);
+    set_buf(d_phi_y, next_phi_y, i, j, k);
+    set_buf(d_phi_z, next_phi_z, i, j, k);
 
-    set_buf(d_psi_x_nxt, next_psi_x, i, j, k);
-    set_buf(d_psi_y_nxt, next_psi_y, i, j, k);
-    set_buf(d_psi_z_nxt, next_psi_z, i, j, k);
+    set_buf(d_psi_x, next_psi_x, i, j, k);
+    set_buf(d_psi_y, next_psi_y, i, j, k);
+    set_buf(d_psi_z, next_psi_z, i, j, k);
 
     // if(i == d_Nx/2 && j == d_Ny/2 && k == d_Nz/2){
-    //     printf("-> %lf\n", buf_at(d_phi_x_nxt, i,j,k));
-    //     printf("phix: %lf -> %lf\n", buf_at(d_phi_x, i,j,k), next_phi_x);
+    //     printf("-> %lf\n", buf_at(d_phi_x, i,j,k));
+    //     printf("phix: %lf -> %lf\n", buf_at(d_phi_x_prv, i,j,k), next_phi_x);
     // }
 
     // printf("calling from %d %d %d\n",i,j,k);
@@ -554,24 +533,25 @@ __global__ void time_step(real_t *d_buffer_prv,
 
     if(i >= d_Nx || j >= d_Ny || k >= d_Nz)
         return; // out of bounds. maybe try better way to deal with this, that induce less waste
+                            
+    return;
+    // int sine_x = d_Nx / 4;
 
-    int sine_x = d_Nx / 4;
+    // if(i == sine_x && j == d_Ny / 2 && k == d_Nz / 2) {
+    //     // emit sin from center, at each direction
+    //     double freq = 1e3; // 1MHz
+    //     int n = 1;
 
-    if(i == sine_x && j == d_Ny / 2 && k == d_Nz / 2) {
-        // emit sin from center, at each direction
-        double freq = 1e3; // 1MHz
-        int n = 1;
+    //     double sine = sin(2 * M_PI * t * freq);
+    //     // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
+    //     // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
+    //     // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
 
-        double sine = sin(2 * M_PI * t * freq);
-        // for (int x = d_Nx/2 - n; x <= d_Nx/2+n; x++) {
-        // for (int y = d_Ny/2 - n; y <= d_Ny/2+n; y++) {
-        // for (int z = d_Nz/2 - n; z <= d_Nz/2+n; z++) {
-
-        //     d_P(x,y,z) = sine;
-        // }}}
-        d_P_nxt(sine_x, d_Ny / 2, d_Nz / 2) = sine;
-        return;
-    }
+    //     //     d_P(x,y,z) = sine;
+    //     // }}}
+    //     d_P_nxt(sine_x, d_Ny / 2, d_Nz / 2) = sine;
+    //     return;
+    // }
     // sine_x = 3 * d_Nx / 4;
 
     // if(i == sine_x && j == d_Ny/2 && k == d_Nz/2){
@@ -602,28 +582,28 @@ __global__ void time_step(real_t *d_buffer_prv,
     // Debug prints for buf_at if they are non-zero
     // if(j == d_Ny/2 && k == d_Nz/2){
 
-    //     double psi_x_val = buf_at(d_psi_x, i, j, k);
-    //     if (psi_x_val != 0) printf("t: %.2lf, buf_at(d_psi_x, %d, %d, %d) = %f\n", t, i, j, k,
+    //     double psi_x_val = buf_at(d_psi_x_prv, i, j, k);
+    //     if (psi_x_val != 0) printf("t: %.2lf, buf_at(d_psi_x_prv, %d, %d, %d) = %f\n", t, i, j, k,
     //     psi_x_val);
 
-    //     // double phi_x_val = buf_at(d_phi_x, i-1, j, k);
-    //     // if (phi_x_val != 0) printf("buf_at(d_phi_x-1, %d, %d, %d) = %f\n", i-1, j, k,
+    //     // double phi_x_val = buf_at(d_phi_x_prv, i-1, j, k);
+    //     // if (phi_x_val != 0) printf("buf_at(d_phi_x_prv-1, %d, %d, %d) = %f\n", i-1, j, k,
     //     phi_x_val);
 
-    //     // double psi_y_val = buf_at(d_psi_y, i, j+1, k);
-    //     // if (psi_y_val != 0) printf("buf_at(d_psi_y, %d, %d, %d) = %f\n", i, j+1, k,
+    //     // double psi_y_val = buf_at(d_psi_y_prv, i, j+1, k);
+    //     // if (psi_y_val != 0) printf("buf_at(d_psi_y_prv, %d, %d, %d) = %f\n", i, j+1, k,
     //     psi_y_val);
 
-    //     // double phi_y_val = buf_at(d_phi_y, i, j-1, k);
-    //     // if (phi_y_val != 0) printf("buf_at(d_phi_y, %d, %d, %d) = %f\n", i, j-1, k,
+    //     // double phi_y_val = buf_at(d_phi_y_prv, i, j-1, k);
+    //     // if (phi_y_val != 0) printf("buf_at(d_phi_y_prv, %d, %d, %d) = %f\n", i, j-1, k,
     //     phi_y_val);
 
-    //     // double psi_z_val = buf_at(d_psi_z, i, j, k+1);
-    //     // if (psi_z_val != 0) printf("buf_at(d_psi_z, %d, %d, %d) = %f\n", i, j, k+1,
+    //     // double psi_z_val = buf_at(d_psi_z_prv, i, j, k+1);
+    //     // if (psi_z_val != 0) printf("buf_at(d_psi_z_prv, %d, %d, %d) = %f\n", i, j, k+1,
     //     psi_z_val);
 
-    //     // double phi_z_val = buf_at(d_phi_z, i, j, k-1);
-    //     // if (phi_z_val != 0) printf("buf_at(d_phi_z, %d, %d, %d) = %f\n", i, j, k-1,
+    //     // double phi_z_val = buf_at(d_phi_z_prv, i, j, k-1);
+    //     // if (phi_z_val != 0) printf("buf_at(d_phi_z_prv, %d, %d, %d) = %f\n", i, j, k-1,
     //     phi_z_val);
     //     }
 
@@ -631,24 +611,24 @@ __global__ void time_step(real_t *d_buffer_prv,
     real_t tmp      = 1. / (d_dx*d_dx) * (-2*d_P(i,j,k) + d_P(i-1,j,k) + d_P(i+1,j,k))
                     + 1. / (d_dy*d_dy) * (-2*d_P(i,j,k) + d_P(i,j-1,k) + d_P(i,j+1,k))
                     + 1. / (d_dz*d_dz) * (-2*d_P(i,j,k) + d_P(i,j,k-1) + d_P(i,j,k+1))
-                    + 1. / (d_dx*d_dx) * (sigma(i,j,k) * buf_at(d_psi_x, i+1,j,k) - sigma(i-1,j,k) *
-    buf_at(d_phi_x, i-1,j,k))
-                    + 1. / (d_dy*d_dy) * (sigma(i,j,k) * buf_at(d_psi_y, i,j+1,k) - sigma(i,j-1,k) *
-    buf_at(d_phi_y, i,j-1,k))
-                    + 1. / (d_dz*d_dz) * (sigma(i,j,k) * buf_at(d_psi_z, i,j,k+1) - sigma(i,j,k-1) *
-    buf_at(d_phi_z, i,j,k-1));
+                    + 1. / (d_dx*d_dx) * (sigma(i,j,k) * buf_at(d_psi_x_prv, i+1,j,k) - sigma(i-1,j,k) *
+    buf_at(d_phi_x_prv, i-1,j,k))
+                    + 1. / (d_dy*d_dy) * (sigma(i,j,k) * buf_at(d_psi_y_prv, i,j+1,k) - sigma(i,j-1,k) *
+    buf_at(d_phi_y_prv, i,j-1,k))
+                    + 1. / (d_dz*d_dz) * (sigma(i,j,k) * buf_at(d_psi_z_prv, i,j,k+1) - sigma(i,j,k-1) *
+    buf_at(d_phi_z_prv, i,j,k-1));
 
 
     d_P_nxt(i,j,k) = tmp * d_dt * d_dt + 2 * d_P(i,j,k) - d_P_prv(i,j,k);
     */
 
     // if(i == d_Nx/2 && j == d_Ny/2 && k == d_Nz/2){
-    //     //printf("-> %lf\n", buf_at(d_phi_x_nxt, i,j,k));
-    //     printf("phix: %lf\n", buf_at(d_phi_x, i,j,k));
+    //     //printf("-> %lf\n", buf_at(d_phi_x, i,j,k));
+    //     printf("phix: %lf\n", buf_at(d_phi_x_prv, i,j,k));
     // }
 }
 
-__global__ void boundary_condition(real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt) {
+__global__ void boundary_condition(real_t *d_buffer_prv, real_t *d_buffer, real_t *d_buffer_nxt ) {
     // X boundaries (left and right)
 
     // for (int y = -PADDING; y < d_Ny + PADDING; y++) {
@@ -712,7 +692,22 @@ __device__ real_t gauss_seidel_formula(int i,
                                        int k,
                                        real_t *d_buffer,
                                        real_t *d_buffer_prv,
-                                       real_t *d_buffer_prv_prv) {
+                                       real_t *d_buffer_prv_prv,                      
+                                       real_t *d_phi_x,
+                                       real_t *d_phi_y,
+                                       real_t *d_phi_z,
+                                       real_t *d_psi_x,
+                                       real_t *d_psi_y,
+                                       real_t *d_psi_z) {
+
+    double dampen_delta = 
+    1. / (d_dx*d_dx) * (sigma(i,j,k) * buf_at(d_psi_x, i+1,j,k) - sigma(i-1,j,k) *
+    buf_at(d_phi_x, i-1,j,k))
+   + 1. / (d_dy*d_dy) * (sigma(i,j,k) * buf_at(d_psi_y, i,j+1,k) - sigma(i,j-1,k) *
+    buf_at(d_phi_y, i,j-1,k))
+   + 1. / (d_dz*d_dz) * (sigma(i,j,k) * buf_at(d_psi_z, i,j,k+1) - sigma(i,j,k-1) *
+    buf_at(d_phi_z, i,j,k-1));
+
     return (d_dt * d_dt
                 * (d_dx * d_dx * d_dy * d_dy
                        * ((K(i, j, k - 1) - K(i, j, k + 1)) * (d_P(i, j, k - 1) - d_P(i, j, k + 1))
@@ -728,13 +723,21 @@ __device__ real_t gauss_seidel_formula(int i,
                                 * (d_P(i - 1, j, k) - d_P(i + 1, j, k))
                             + 2 * (-2 * d_P(i, j, k) + d_P(i - 1, j, k) + d_P(i + 1, j, k))
                                   * K(i, j, k)))
-                * K(i, j, k)
+                * K(i, j, k) + 2* d_dx * d_dx * d_dy * d_dy * d_dz * d_dz * dampen_delta
             + 2 * d_dx * d_dx * d_dy * d_dy * d_dz * d_dz
                   * (2 * d_P_prv(i, j, k) - d_P_prv_prv(i, j, k)))
-         / (2 * d_dx * d_dx * d_dy * d_dy * d_dz * d_dz);
+         / (2 * d_dx * d_dx * d_dy * d_dy * d_dz * d_dz)
+         ;
 }
 
-__global__ void gauss_seidel_red(real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_prv) {
+__global__ void 
+gauss_seidel_red(real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_prv,                      
+    real_t *d_phi_x,
+    real_t *d_phi_y,
+    real_t *d_phi_z,
+    real_t *d_psi_x,
+    real_t *d_psi_y,
+    real_t *d_psi_z) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -743,12 +746,18 @@ __global__ void gauss_seidel_red(real_t *d_buffer, real_t *d_buffer_prv, real_t 
         return;
 
     if((i + j + k) % 2 == 0) {
-        d_P(i, j, k) = gauss_seidel_formula(i, j, k, d_buffer, d_buffer_prv, d_buffer_prv_prv);
+        d_P(i, j, k) = gauss_seidel_formula(i, j, k, d_buffer, d_buffer_prv, d_buffer_prv_prv, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z);
     }
 }
 
 __global__ void
-gauss_seidel_black(real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_prv) {
+gauss_seidel_black(real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_prv,                      
+    real_t *d_phi_x,
+    real_t *d_phi_y,
+    real_t *d_phi_z,
+    real_t *d_psi_x,
+    real_t *d_psi_y,
+    real_t *d_psi_z) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     int k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -757,7 +766,7 @@ gauss_seidel_black(real_t *d_buffer, real_t *d_buffer_prv, real_t *d_buffer_prv_
         return;
 
     if((i + j + k) % 2 == 1) {
-        d_P(i, j, k) = gauss_seidel_formula(i, j, k, d_buffer, d_buffer_prv, d_buffer_prv_prv);
+        d_P(i, j, k) = gauss_seidel_formula(i, j, k, d_buffer, d_buffer_prv, d_buffer_prv_prv, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z);
     }
 }
 
@@ -796,26 +805,33 @@ void simulation_loop(void) {
 
         // show_sigma<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer)
 
-        // time_step<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer_nxt, d_buffer, d_phi_x,
-        // d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z, iteration*dt);
+        // time_step<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer_nxt, d_buffer, d_phi_x_prv,
+        // d_phi_y_prv, d_phi_z_prv, d_psi_x_prv, d_psi_y_prv, d_psi_z_prv, iteration*dt);
         emit_source<<<gridSize, blockSize>>>(d_buffer_prv, iteration * dt);
-        for(size_t iter = 0; iter < 5; iter++) {
-            gauss_seidel_red<<<gridSize, blockSize>>>(d_buffer, d_buffer_prv, d_buffer_prv_prv);
-            gauss_seidel_black<<<gridSize, blockSize>>>(d_buffer, d_buffer_prv, d_buffer_prv_prv);
+
+        aux_variable_step<<<pml_gridSize, blockSize>>>(d_buffer, d_phi_x_prv, d_phi_y_prv, d_phi_z_prv,
+            d_psi_x_prv, d_psi_y_prv, d_psi_z_prv, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z);//is it happening at the right moment ? I set my current aux variable, then use them.
+            //previously, I was using the current one, and could compute the next one at the same time. I guess now its ok but maybe not the best way.
+
+
+        for(size_t iter = 0; iter < 10; iter++) {
+
+            gauss_seidel_red<<<gridSize, blockSize>>>(d_buffer, d_buffer_prv, d_buffer_prv_prv, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z);
+            gauss_seidel_black<<<gridSize, blockSize>>>(d_buffer, d_buffer_prv, d_buffer_prv_prv, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z);
         }
         // void *args[] = {
         //     (void*) d_buffer,
         // };
         // cudaErrorCheck(cudaLaunchCooperativeKernel((void *) gauss_seidel, gridSize, blockSize,
         // args)); jacobi<<<gridSize, blockSize>>>(d_buffer_prv, d_buffer); cudaDeviceSynchronize();
-        // aux_variable_step<<<pml_gridSize, blockSize>>>(d_buffer, d_phi_x, d_phi_y, d_phi_z,
-        // d_psi_x, d_psi_y, d_psi_z, d_phi_x_nxt, d_phi_y_nxt, d_phi_z_nxt, d_psi_x_nxt,
-        // d_psi_y_nxt, d_psi_z_nxt); cudaDeviceSynchronize();
+        // aux_variable_step<<<pml_gridSize, blockSize>>>(d_buffer, d_phi_x_prv, d_phi_y_prv, d_phi_z_prv,
+        // d_psi_x_prv, d_psi_y_prv, d_psi_z_prv, d_phi_x, d_phi_y, d_phi_z, d_psi_x,
+        // d_psi_y, d_psi_z); cudaDeviceSynchronize();
 
         // boundary_condition<<<1,1>>>(d_buffer_prv, d_buffer, d_buffer_nxt);//for now
         // cudaDeviceSynchronize();
 
-        // printf("prv phix %p, cur phix %p\n", d_phi_x, d_phi_x_nxt);
+        // printf("prv phix %p, cur phix %p\n", d_phi_x_prv, d_phi_x);
 
         // Rotate the time step buffers
         move_buffer_window();
