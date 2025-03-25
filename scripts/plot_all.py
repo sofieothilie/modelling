@@ -3,6 +3,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import SymLogNorm
 from concurrent.futures import ProcessPoolExecutor
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -34,7 +35,8 @@ def plot_data_3d(file_path, output_path):
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection='3d')
     
-    ax.plot_surface(X, Y, data, cmap='jet', edgecolor='none')
+    norm = SymLogNorm(linthresh=1e-3)
+    ax.plot_surface(X, Y, data, cmap='jet', edgecolor='none', norm=norm)
 
     ax.view_init(elev=40, azim=-80)
     ax.invert_yaxis()
@@ -42,7 +44,7 @@ def plot_data_3d(file_path, output_path):
     ax.set_xlabel("X")
     ax.set_ylabel("Y")
     ax.set_zlabel("Wave Amplitude")
-    ax.set_zlim(-1,1)
+    ax.set_zlim(-0.01,0.01)
     
     plt.savefig(output_path)
     plt.close()
