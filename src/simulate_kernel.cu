@@ -723,7 +723,7 @@ __device__ real_t PML(int i,
               / (d_dy * d_dy)
         - (d_Phi_z(i, j, k - 1) * sigma_z(i, j, k - 1) - d_Psi_z(i, j, k + 1) * sigma_z(i, j, k))
               / (d_dz * d_dz);
-    return K(i, j, k) *  K(i, j, k) * result;
+    return K(i, j, k) * K(i, j, k) * result;
 }
 
 __device__ real_t gauss_seidel_formula(int i,
@@ -985,6 +985,8 @@ extern "C" int simulate_wave(simulation_parameters p) {
 }
 
 __device__ double K(int_t i, int_t j, int_t k) {
+    if(i < d_Nx / 2 && i > d_Nx / 6)
+        return PLASTIC_K;
     return WATER_K;
 
     double x = i * d_dx, y = j * d_dy, z = k * d_dz;
