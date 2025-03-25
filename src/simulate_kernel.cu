@@ -30,7 +30,7 @@
 
 #define PADDING 0
 #define PML_WIDTH 20
-//#define PML_SHIFT 40 //(1.5*d_Nx - PML_WIDTH) / 2
+// #define PML_SHIFT 40 //(1.5*d_Nx - PML_WIDTH) / 2
 #define PML_SHIFT 80 //(1.5*d_Nx - PML_WIDTH) / 2
 
 #define WATER_K 1500
@@ -436,41 +436,47 @@ __global__ void aux_variable_step(const real_t *d_buffer,
 
     // notice the parameters I pass to sigma, the factor is the same for all directions, depending
     // only on depth in layer
-    real_t next_phi_x = (-0.5 / d_dx
-                             * (sigma(i - 1, j, k) * buf_at(d_phi_x_prv, i - 1, j, k)
-                                + sigma(i, j, k) * buf_at(d_phi_x_prv, i, j, k))
-                         - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
+    real_t next_phi_x = K(i, j, k)
+                          * (-0.5 / d_dx
+                                 * (sigma(i - 1, j, k) * buf_at(d_phi_x_prv, i - 1, j, k)
+                                    + sigma(i, j, k) * buf_at(d_phi_x_prv, i, j, k))
+                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
                           * d_dt
                       + buf_at(d_phi_x_prv, i, j, k);
-    real_t next_phi_y = (-0.5 / d_dy
-                             * (sigma(i, j - 1, k) * buf_at(d_phi_y_prv, i, j - 1, k)
-                                + sigma(i, j, k) * buf_at(d_phi_y_prv, i, j, k))
-                         - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
+    real_t next_phi_y = K(i, j, k)
+                          * (-0.5 / d_dy
+                                 * (sigma(i, j - 1, k) * buf_at(d_phi_y_prv, i, j - 1, k)
+                                    + sigma(i, j, k) * buf_at(d_phi_y_prv, i, j, k))
+                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
                           * d_dt
                       + buf_at(d_phi_y_prv, i, j, k);
-    real_t next_phi_z = (-0.5 / d_dz
-                             * (sigma(i, j, k - 1) * buf_at(d_phi_z_prv, i, j, k - 1)
-                                + sigma(i, j, k) * buf_at(d_phi_z_prv, i, j, k))
-                         - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
+    real_t next_phi_z = K(i, j, k)
+                          * (-0.5 / d_dz
+                                 * (sigma(i, j, k - 1) * buf_at(d_phi_z_prv, i, j, k - 1)
+                                    + sigma(i, j, k) * buf_at(d_phi_z_prv, i, j, k))
+                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
                           * d_dt
                       + buf_at(d_phi_z_prv, i, j, k);
 
-    real_t next_psi_x = (-0.5 / d_dx
-                             * (sigma(i - 1, j, k) * buf_at(d_psi_x_prv, i, j, k)
-                                + sigma(i, j, k) * buf_at(d_psi_x_prv, i + 1, j, k))
-                         - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
+    real_t next_psi_x = K(i, j, k)
+                          * (-0.5 / d_dx
+                                 * (sigma(i - 1, j, k) * buf_at(d_psi_x_prv, i, j, k)
+                                    + sigma(i, j, k) * buf_at(d_psi_x_prv, i + 1, j, k))
+                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
                           * d_dt
                       + buf_at(d_psi_x_prv, i, j, k);
-    real_t next_psi_y = (-0.5 / d_dy
-                             * (sigma(i, j - 1, k) * buf_at(d_psi_y_prv, i, j, k)
-                                + sigma(i, j, k) * buf_at(d_psi_y_prv, i, j + 1, k))
-                         - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
+    real_t next_psi_y = K(i, j, k)
+                          * (-0.5 / d_dy
+                                 * (sigma(i, j - 1, k) * buf_at(d_psi_y_prv, i, j, k)
+                                    + sigma(i, j, k) * buf_at(d_psi_y_prv, i, j + 1, k))
+                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
                           * d_dt
                       + buf_at(d_psi_y_prv, i, j, k);
-    real_t next_psi_z = (-0.5 / d_dz
-                             * (sigma(i, j, k - 1) * buf_at(d_psi_z_prv, i, j, k)
-                                + sigma(i, j, k) * buf_at(d_psi_z_prv, i, j, k + 1))
-                         - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
+    real_t next_psi_z = K(i, j, k)
+                          * (-0.5 / d_dz
+                                 * (sigma(i, j, k - 1) * buf_at(d_psi_z_prv, i, j, k)
+                                    + sigma(i, j, k) * buf_at(d_psi_z_prv, i, j, k + 1))
+                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
                           * d_dt
                       + buf_at(d_psi_z_prv, i, j, k);
 
@@ -500,7 +506,7 @@ __global__ void emit_source(real_t *d_buffer, double t) {
         return; // out of bounds. maybe try better way to deal with this, that induce less waste
 
     int sine_x = d_Nx / 4;
-    double freq = 1e3; // 1MHz
+    double freq = 1e6; // 1MHz
 
     if(i == sine_x && j == d_Ny / 2 && k == d_Nz / 2 && t * freq < 1) {
         // emit sin from center, at each direction
@@ -710,12 +716,14 @@ __device__ real_t PML(int i,
                       real_t *d_psi_x,
                       real_t *d_psi_y,
                       real_t *d_psi_z) {
-    return -(d_Phi_x(i - 1, j, k) * sigma_x(i - 1, j, k) - d_Psi_x(i + 1, j, k) * sigma_x(i, j, k))
-             / (d_dx * d_dx)
-         - (d_Phi_y(i, j - 1, k) * sigma_y(i, j - 1, k) - d_Psi_y(i, j + 1, k) * sigma_y(i, j, k))
-               / (d_dy * d_dy)
-         - (d_Phi_z(i, j, k - 1) * sigma_z(i, j, k - 1) - d_Psi_z(i, j, k + 1) * sigma_z(i, j, k))
-               / (d_dz * d_dz);
+    real_t result =
+        -(d_Phi_x(i - 1, j, k) * sigma_x(i - 1, j, k) - d_Psi_x(i + 1, j, k) * sigma_x(i, j, k))
+            / (d_dx * d_dx)
+        - (d_Phi_y(i, j - 1, k) * sigma_y(i, j - 1, k) - d_Psi_y(i, j + 1, k) * sigma_y(i, j, k))
+              / (d_dy * d_dy)
+        - (d_Phi_z(i, j, k - 1) * sigma_z(i, j, k - 1) - d_Psi_z(i, j, k + 1) * sigma_z(i, j, k))
+              / (d_dz * d_dz);
+    return K(i, j, k) *  K(i, j, k) * result;
 }
 
 __device__ real_t gauss_seidel_formula(int i,
@@ -977,7 +985,6 @@ extern "C" int simulate_wave(simulation_parameters p) {
 }
 
 __device__ double K(int_t i, int_t j, int_t k) {
-    return 1;
     return WATER_K;
 
     double x = i * d_dx, y = j * d_dy, z = k * d_dz;
