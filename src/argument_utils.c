@@ -14,11 +14,11 @@ OPTIONS
      * Argument parsing: default parameters
      */
 
-     real_t sim_Lx = 0.001, sim_Ly = 0.001, sim_Lz = 0.001;
-     real_t dt = 1e-8;
-     int_t Nx = 100, Ny = 100, Nz = 100;
-     int_t max_iteration = 2000;
-     int_t snapshot_frequency = 20;
+    real_t sim_Lx = 0.001, sim_Ly = 0.001, sim_Lz = 0.001;
+    real_t dt = 1e-8;
+    int_t Nx = 100, Ny = 100, Nz = 100;
+    int_t max_iteration = 2000;
+    int_t snapshot_frequency = 20;
 
     static struct option const long_options[] =  {
         {"help",                no_argument,       0, 'h'},
@@ -40,90 +40,90 @@ OPTIONS
         int c;
         int option_index = 0;
 
-while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index )) != -1 )
-{
-    switch (c)
-    {
-        case 'h':
-            help( argv[0], 0, NULL );
-            exit(0);
-            break;
-        case 'x':
-            sim_Lx = strtod(optarg, &endptr);
-            if ( endptr == optarg || sim_Lx < 0 )
+        while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index )) != -1 )
+        {
+            switch (c)
             {
-                help( argv[0], c, optarg );
-                return NULL;
+            case 'h':
+                help( argv[0], 0, NULL );
+                exit(0);
+                break;
+            case 'x':
+                sim_Lx = strtod(optarg, &endptr);
+                if ( endptr == optarg || sim_Lx < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 'y':
+                sim_Ly = strtod(optarg, &endptr);
+                if ( endptr == optarg || sim_Ly < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 'z':
+                sim_Lz = strtod(optarg, &endptr);
+                if ( endptr == optarg || sim_Lz < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 'X':
+                Nx = strtol(optarg, &endptr, 10);
+                if ( endptr == optarg || Nx < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 'Y':
+                Ny = strtol(optarg, &endptr, 10);
+                if ( endptr == optarg || Ny < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 'Z':
+                Nz = strtol(optarg, &endptr, 10);
+                if ( endptr == optarg || Nz < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 't':
+                dt = strtod(optarg, &endptr);
+                if ( endptr == optarg || dt <= 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 'i':
+                max_iteration = strtol(optarg, &endptr, 10);
+                if ( endptr == optarg || max_iteration < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            case 's':
+                snapshot_frequency = strtol(optarg, &endptr, 10);
+                if ( endptr == optarg || snapshot_frequency < 0 )
+                {
+                    help( argv[0], c, optarg );
+                    return NULL;
+                }
+                break;
+            default:
+                abort();
             }
-            break;
-        case 'y':
-            sim_Ly = strtod(optarg, &endptr);
-            if ( endptr == optarg || sim_Ly < 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        case 'z':
-            sim_Lz = strtod(optarg, &endptr);
-            if ( endptr == optarg || sim_Lz < 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        case 'X':
-            Nx = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || Nx < 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        case 'Y':
-            Ny = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || Ny < 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        case 'Z':
-            Nz = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || Nz < 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        case 't':
-            dt = strtod(optarg, &endptr);
-            if ( endptr == optarg || dt <= 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        case 'i':
-            max_iteration = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || max_iteration < 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        case 's':
-            snapshot_frequency = strtol(optarg, &endptr, 10);
-            if ( endptr == optarg || snapshot_frequency < 0 )
-            {
-                help( argv[0], c, optarg );
-                return NULL;
-            }
-            break;
-        default:
-            abort();
-    }
-}
+        }
 
     }
 
@@ -146,7 +146,7 @@ while ( (c = getopt_long( argc, argv, short_options, long_options, &option_index
     args_parsed->max_iteration = max_iteration;
     args_parsed->snapshot_frequency = snapshot_frequency;
 
-  return args_parsed;
+    return args_parsed;
 }
 
 

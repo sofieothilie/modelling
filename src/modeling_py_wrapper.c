@@ -23,7 +23,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
     int fs=8e6;
 
     PyArrayObject* signature_wave = NULL;
-    
+
 
     static char *kwlist[] = {"model", "signature_wave", "res", "dt", "max_iter","snapshot_freq", "sensor_height", "sampling", NULL};
 
@@ -60,7 +60,7 @@ PyObject *modeling_py_wrapper(PyObject *self, PyObject *args, PyObject* kwargs)
         return NULL;
     }
 
-    
+
 
     // Retrieve data pointer
     real_t* model_data = (real_t*)PyArray_DATA(model);

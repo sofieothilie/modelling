@@ -7,7 +7,7 @@ Python module creation
 */
 
 static PyMethodDef methods[] = {
-   {"launch_model", modeling_py_wrapper, METH_VARARGS | METH_KEYWORDS,  "simulate wave on model."},
+    {"launch_model", modeling_py_wrapper, METH_VARARGS | METH_KEYWORDS,  "simulate wave on model."},
     {NULL, NULL, 0, NULL}  // Sentinel value to indicate the end
 };
 

@@ -1,16 +1,16 @@
 #include "argument_utils.h"
-#include "simulate_kernel.h"
+#include "simulation.h"
 #include <stdio.h>
 #include <stdlib.h>
 
 #define MODEL_Nx 1201
 #define MODEL_Ny 401
 
-int main(int argc, char** argv){
+int main(int argc, char** argv) {
     OPTIONS *options = parse_args(argc, argv);
 
     FILE* model_file = fopen("data/model.bin", "rb");
-    if(!model_file){
+    if(!model_file) {
         perror("Failed to open file");
         return 1;
     }
@@ -42,8 +42,7 @@ int main(int argc, char** argv){
         .sim_Lx = options->sim_Lx, .sim_Ly = options->sim_Ly, .sim_Lz = options->sim_Lz,
         .max_iter = options->max_iteration,
         .snapshot_freq = options->snapshot_frequency,
-        .dt = options->dt,
-        .sensor_height = 0
+        .dt = options->dt
 
     };
     int err = simulate_wave(p);

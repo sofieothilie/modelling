@@ -2,7 +2,7 @@
 #define _ARGUMENT_UTILS_H_
 
 #include <stdint.h>
-#include "simulate_kernel.h"
+#include "simulation.h"
 
 
 typedef struct options_struct {

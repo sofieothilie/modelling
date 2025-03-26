@@ -1,6 +1,7 @@
 #include "simulation.h"
 #include "cuda_utils.h"
-#include "PML_buffer.h"
+#include "PML.h"
+#include "types.h"
 
 #include <stdio.h>
 #include <sys/time.h>
@@ -24,7 +25,7 @@ real_t *d_buffer_prv_prv, *d_buffer_prv, *d_buffer;
 
 
 int_t Nx, Ny, Nz; // they must be parsed in the main before used anywhere, I guess that's a very bad
-                  // way of doing it, but the template did it like this
+// way of doing it, but the template did it like this
 double sim_Lx, sim_Ly, sim_Lz;
 
 double dt;
@@ -111,55 +112,29 @@ void simulation_loop(void) {
         dim3 gridSize((Nx + PADDING + block_x - 1) / block_x,
                       (Ny + PADDING + block_y - 1) / block_y,
                       (Nz + PADDING + block_z - 1) / block_z);
-        dim3 pml_z_gridSize((Nx + PADDING + block_x - 1) / block_x,
-                            (Ny + PADDING + block_y - 1) / block_y,
-                            (PADDING + block_z - 1) / block_z);
-        dim3 pml_x_gridSize((PADDING + block_x - 1) / block_x,
-                            (Ny + block_y - 1) / block_y,
-                            (Nz + PADDING + block_z - 1) / block_z);
-        dim3 pml_y_gridSize((Nx + block_x - 1) / block_x,
-                            (PADDING + block_y - 1) / block_y,
-                            (Nz + block_z - 1) / block_z);
-
-        emit_source<<<gridSize, blockSize>>>(d_buffer_prv, iteration * dt);
-
-        aux_variable_step_z<<<pml_z_gridSize, blockSize>>>(d_buffer,
-                                                           d_phi_z_prv,
-                                                           d_psi_z_prv,
-                                                           d_phi_z,
-                                                           d_psi_z);
-
-        aux_variable_step_x<<<pml_x_gridSize, blockSize>>>(d_buffer,
-                                                           d_phi_x_prv,
-                                                           d_psi_x_prv,
-                                                           d_phi_x,
-                                                           d_psi_x);
-
-        aux_variable_step_y<<<pml_y_gridSize, blockSize>>>(d_buffer,
-                                                           d_phi_y_prv,
-                                                           d_psi_y_prv,
-                                                           d_phi_y,
-                                                           d_psi_y);
+        
+                      
+        step_all_aux_var();
 
         for(size_t iter = 0; iter < 10; iter++) {
             gauss_seidel_red<<<gridSize, blockSize>>>(d_buffer,
-                                                      d_buffer_prv,
-                                                      d_buffer_prv_prv,
-                                                      d_phi_x,
-                                                      d_phi_y,
-                                                      d_phi_z,
-                                                      d_psi_x,
-                                                      d_psi_y,
-                                                      d_psi_z);
+                    d_buffer_prv,
+                    d_buffer_prv_prv,
+                    d_phi_x,
+                    d_phi_y,
+                    d_phi_z,
+                    d_psi_x,
+                    d_psi_y,
+                    d_psi_z);
             gauss_seidel_black<<<gridSize, blockSize>>>(d_buffer,
-                                                        d_buffer_prv,
-                                                        d_buffer_prv_prv,
-                                                        d_phi_x,
-                                                        d_phi_y,
-                                                        d_phi_z,
-                                                        d_psi_x,
-                                                        d_psi_y,
-                                                        d_psi_z);
+                    d_buffer_prv,
+                    d_buffer_prv_prv,
+                    d_phi_x,
+                    d_phi_y,
+                    d_phi_z,
+                    d_psi_x,
+                    d_psi_y,
+                    d_psi_z);
         }
         move_buffer_window();
     }
@@ -171,21 +146,7 @@ __device__ double K(int_t i, int_t j, int_t k) {
     return WATER_K;
 
     double x = i * d_dx, y = j * d_dy, z = k * d_dz;
-    printf("K is called, thats not right\n");
-    // if(j < 60){
-    //     return WATER_K;
-    // }else if(j > 65){
-    //     return PLASTIC_K;
-    // }else{
-    //     double close_to_plastic = ((double)j - 60.)/5.;
-    //     return close_to_plastic * PLASTIC_K + (1-close_to_plastic)*WATER_K;
-    // }
 
-    // to test in smaller space
-    //  if(j > 300){
-    //      return PLASTIC_K;
-    //  }
-    return WATER_K;
 
     // printf("x = %.4f, y = %.4f, z = %.4f\n", x, y, z);
 
@@ -238,6 +199,36 @@ __global__ void emit_source(real_t *d_buffer, double t) {
     }
 }
 
+static void alloc_aux_var(Aux_variable* v){
+    size_t border_size_bottom = (Nx + PADDING) * (Ny + PADDING) * PADDING;
+    size_t border_size_side = (Ny + PADDING) * Nz * PADDING;
+    size_t border_size_front = Nx * Nz * PADDING;
+
+
+    cudaErrorCheck(cudaMalloc(&(v->bottom), border_size_bottom));
+    cudaErrorCheck(cudaMalloc(&(v->side), border_size_side));
+    cudaErrorCheck(cudaMalloc(&(v->front), border_size_front));
+
+    //also a memset for safety
+
+    cudaErrorCheck(cudaMemset(v->bottom, 0, border_size_bottom));
+    cudaErrorCheck(cudaMemset(v->side, 0, border_size_side));
+    cudaErrorCheck(cudaMemset(v->front, 0, border_size_front));
+}
+
+static void free_aux_var(Aux_variable* v){
+    size_t border_size_bottom = (Nx + PADDING) * (Ny + PADDING) * PADDING;
+    size_t border_size_side = (Ny + PADDING) * Nz * PADDING;
+    size_t border_size_front = Nx * Nz * PADDING;
+
+
+    cudaErrorCheck(cudaFree(v->bottom));
+    cudaErrorCheck(cudaFree(v->side));
+    cudaErrorCheck(cudaFree(v->front));
+
+    //also a memset for safety
+}
+
 // Set up our three buffers, and fill two with an initial perturbation
 void domain_initialize() {
     size_t buffer_size = (Nx + PADDING) * (Ny + PADDING) * (Nz + PADDING);
@@ -252,37 +243,28 @@ void domain_initialize() {
     cudaErrorCheck(cudaMalloc(&d_buffer_prv, buffer_size));
     cudaErrorCheck(cudaMalloc(&d_buffer, buffer_size));
 
-    size_t border_size_z = (Nx + PADDING) * (Ny + PADDING) * PADDING;
-    size_t border_size_x = (Ny + PADDING) * Nz * PADDING;
-    size_t border_size_y = Nx * Nz * PADDING;
-    cudaErrorCheck(cudaMalloc(&d_phi_x_prv, border_size_x));
-    cudaErrorCheck(cudaMalloc(&d_phi_y_prv, border_size_y));
-    cudaErrorCheck(cudaMalloc(&d_phi_z_prv, border_size_z));
 
-    cudaErrorCheck(cudaMalloc(&d_psi_x_prv, border_size_x));
-    cudaErrorCheck(cudaMalloc(&d_psi_y_prv, border_size_y));
-    cudaErrorCheck(cudaMalloc(&d_psi_z_prv, border_size_z));
+    alloc_aux_var(&d_phi_x_prv);
+    alloc_aux_var(&d_phi_y_prv);
+    alloc_aux_var(&d_phi_z_prv);
 
-    cudaErrorCheck(cudaMalloc(&d_phi_x, border_size_x));
-    cudaErrorCheck(cudaMalloc(&d_phi_y, border_size_y));
-    cudaErrorCheck(cudaMalloc(&d_phi_z, border_size_z));
+    alloc_aux_var(&d_psi_x_prv);
+    alloc_aux_var(&d_psi_y_prv);
+    alloc_aux_var(&d_psi_z_prv);
 
-    cudaErrorCheck(cudaMalloc(&d_psi_x, border_size_x));
-    cudaErrorCheck(cudaMalloc(&d_psi_y, border_size_y));
-    cudaErrorCheck(cudaMalloc(&d_psi_z, border_size_z));
+    alloc_aux_var(&d_phi_x);
+    alloc_aux_var(&d_phi_y);
+    alloc_aux_var(&d_phi_z);
+
+    alloc_aux_var(&d_psi_x);
+    alloc_aux_var(&d_psi_y);
+    alloc_aux_var(&d_psi_z);
 
     // set it all to 0 (memset only works for int!)
     cudaErrorCheck(cudaMemset(d_buffer_prv_prv, 0, buffer_size));
     cudaErrorCheck(cudaMemset(d_buffer_prv, 0, buffer_size));
     cudaErrorCheck(cudaMemset(d_buffer, 0, buffer_size));
 
-    cudaErrorCheck(cudaMemset(d_phi_x, 0, border_size_x));
-    cudaErrorCheck(cudaMemset(d_phi_y, 0, border_size_y));
-    cudaErrorCheck(cudaMemset(d_phi_z, 0, border_size_z));
-
-    cudaErrorCheck(cudaMemset(d_psi_x, 0, border_size_x));
-    cudaErrorCheck(cudaMemset(d_psi_y, 0, border_size_y));
-    cudaErrorCheck(cudaMemset(d_psi_z, 0, border_size_z));
 
     cudaErrorCheck(cudaMemcpyToSymbol(d_Nx, &Nx, sizeof(int_t)));
     cudaErrorCheck(cudaMemcpyToSymbol(d_Ny, &Ny, sizeof(int_t)));
@@ -304,15 +286,15 @@ void domain_finalize(void) {
     cudaFree(d_buffer_prv);
     cudaFree(d_buffer);
 
-    cudaFree(d_phi_x_prv);
-    cudaFree(d_phi_y_prv);
-    cudaFree(d_phi_z_prv);
-
-    cudaFree(d_psi_x_prv);
-    cudaFree(d_psi_y_prv);
-    cudaFree(d_psi_z_prv);
-
     free(saved_buffer);
+}
+
+
+
+void swap_aux_var(Aux_variable* v1, Aux_variable* v2){
+    Aux_variable *temp = v1;
+    v1 = v2;
+    v2 = temp;
 }
 
 // Rotate the time step buffers for each dimension
@@ -324,29 +306,12 @@ void move_buffer_window() {
     d_buffer = temp;
 
     // move auxiliary variables, I guess
-    temp = d_phi_x_prv;
-    d_phi_x_prv = d_phi_x;
-    d_phi_x = temp;
-
-    temp = d_phi_y_prv;
-    d_phi_y_prv = d_phi_y;
-    d_phi_y = temp;
-
-    temp = d_phi_z_prv;
-    d_phi_z_prv = d_phi_z;
-    d_phi_z = temp;
-
-    temp = d_psi_x_prv;
-    d_psi_x_prv = d_psi_x;
-    d_psi_x = temp;
-
-    temp = d_psi_y_prv;
-    d_psi_y_prv = d_psi_y;
-    d_psi_y = temp;
-
-    temp = d_psi_z_prv;
-    d_psi_z_prv = d_psi_z;
-    d_psi_z = temp;
+    swap_aux_var(&d_phi_x_prv, &d_phi_x);
+    swap_aux_var(&d_phi_y_prv, &d_phi_y);
+    swap_aux_var(&d_phi_z_prv, &d_phi_z);
+    swap_aux_var(&d_psi_x_prv, &d_psi_x);
+    swap_aux_var(&d_psi_y_prv, &d_psi_y);
+    swap_aux_var(&d_psi_z_prv, &d_psi_z);
 }
 
 // Save the present time step in a numbered file under 'data/'
@@ -368,10 +333,10 @@ void domain_save(int_t step) {
         for(int_t i = 0; i < Nx; i++) {
             int_t k = Nz / 2;
             int w = fwrite(
-                &saved_buffer[i * ((Ny + PADDING) * (Nz + PADDING)) + j * (Nz + PADDING) + k],
-                sizeof(real_t),
-                1,
-                out); // take horizontal slice from middle, around yz axis
+                        &saved_buffer[i * ((Ny + PADDING) * (Nz + PADDING)) + j * (Nz + PADDING) + k],
+                        sizeof(real_t),
+                        1,
+                        out); // take horizontal slice from middle, around yz axis
             if(w != 1)
                 printf("could write all\n");
         }

@@ -105,12 +105,12 @@ extern int optopt;
 
 struct option
 {
-  const char *name;
-  /* has_arg can't be an enum because some compilers complain about
-     type mismatches in all the code that assumes it is an int.  */
-  int has_arg;
-  int *flag;
-  int val;
+    const char *name;
+    /* has_arg can't be an enum because some compilers complain about
+       type mismatches in all the code that assumes it is an int.  */
+    int has_arg;
+    int *flag;
+    int val;
 };
 
 /* Names for the values of the `has_arg' field of `struct option'.  */
@@ -150,7 +150,7 @@ struct option
    differences in the consts, in stdlib.h.  To avoid compilation
    errors, only prototype getopt for the GNU C library.  */
 extern int getopt (int ___argc, char *const *___argv, const char *__shortopts)
-       __THROW;
+__THROW;
 
 # if defined __need_getopt && defined __USE_POSIX2 \
   && !defined __USE_POSIX_IMPLICITLY && !defined __USE_GNU
@@ -158,12 +158,12 @@ extern int getopt (int ___argc, char *const *___argv, const char *__shortopts)
    additional functionality can be disable at runtime.  This redirection
    helps to also do this at runtime.  */
 #  ifdef __REDIRECT
-  extern int __REDIRECT_NTH (getopt, (int ___argc, char *const *___argv,
-				      const char *__shortopts),
-			     __posix_getopt);
+extern int __REDIRECT_NTH (getopt, (int ___argc, char *const *___argv,
+                                    const char *__shortopts),
+                           __posix_getopt);
 #  else
 extern int __posix_getopt (int ___argc, char *const *___argv,
-			   const char *__shortopts) __THROW;
+                           const char *__shortopts) __THROW;
 #   define getopt __posix_getopt
 #  endif
 # endif
@@ -173,13 +173,13 @@ extern int getopt ();
 
 #ifndef __need_getopt
 extern int getopt_long (int ___argc, char *const *___argv,
-			const char *__shortopts,
-		        const struct option *__longopts, int *__longind)
-       __THROW;
+                        const char *__shortopts,
+                        const struct option *__longopts, int *__longind)
+__THROW;
 extern int getopt_long_only (int ___argc, char *const *___argv,
-			     const char *__shortopts,
-		             const struct option *__longopts, int *__longind)
-       __THROW;
+                             const char *__shortopts,
+                             const struct option *__longopts, int *__longind)
+__THROW;
 
 #endif
 

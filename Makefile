@@ -36,7 +36,7 @@ build_cuda:
 
 NVCC_FLAGS = -O0 -I./src
 
-build: src/argument_utils.c src/modeling_cmd.c src/simulate_kernel.cu src/getopt.c
+build: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/gauss_seidel.cu src/PML.cu src/simulation.cu
 	nvcc $(NVCC_FLAGS) $^ -o bin/modeling_cmd
 
 
