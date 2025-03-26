@@ -42,7 +42,7 @@ build: src/argument_utils.c src/modeling_cmd.c src/simulate_kernel.cu src/getopt
 
 console: 
 	mkdir -p wave_data
-	./bin/modeling_cmd -x 0.01 -y 0.01 -z 0.01 -X 100 -Y 100 -Z 100 -t 1e-8 -i 2000 -s 5
+	./bin/modeling_cmd -x 0.01 -y 0.01 -z 0.01 -X 100 -Y 100 -Z 100 -t 1e-9 -i 10000 -s 10
 
 
 visu: run plot movie
