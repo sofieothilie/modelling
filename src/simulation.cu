@@ -600,45 +600,37 @@ __device__ real_t gauss_seidel(const real_t *const U,
                                const PML_variable Phi,
                                const Dimensions dimensions,
                                const Coords coords) {
-    const real_t dx = dimensions.dh[X];
-    const real_t dy = dimensions.dh[Y];
-    const real_t dz = dimensions.dh[Z];
+    const real_t *dh = dimensions.dh;
     const real_t dt = dimensions.dt;
 
-    const real_t PML_val = 0.0;
-    // real_t PML_val = PML(i, j, k, d_buffer, d_phi_x, d_phi_y, d_phi_z, d_psi_x, d_psi_y, d_psi_z);
+    real_t result = 2.0 * U_prev(coords) - U_prev_prev(coords);
 
-    const real_t result =
-        (dt * dt)
-            * (2.0
-                   * (-K(tau_shift(coords, -1, X)) / (2.0 * dx)
-                      + K(tau_shift(coords, +1, X)) / (2.0 * dx))
-                   * (-U(tau_shift(coords, -1, X)) / (2.0 * dx)
-                      + U(tau_shift(coords, +1, X)) / (2.0 * dx))
-                   * K(coords)
-               + 2.0
-                     * (-K(tau_shift(coords, -1, Y)) / (2.0 * dy)
-                        + K(tau_shift(coords, +1, Y)) / (2.0 * dy))
-                     * (-U(tau_shift(coords, -1, Y)) / (2.0 * dy)
-                        + U(tau_shift(coords, +1, Y)) / (2.0 * dy))
-                     * K(coords)
-               + 2.0
-                     * (-K(tau_shift(coords, -1, Z)) / (2.0 * dz)
-                        + K(tau_shift(coords, +1, Z)) / (2.0 * dz))
-                     * (-U(tau_shift(coords, -1, Z)) / (2.0 * dz)
-                        + U(tau_shift(coords, +1, Z)) / (2.0 * dz))
-                     * K(coords)
-               + (-2.0 * U(coords) / (dx * dx) + U(tau_shift(coords, -1, X)) / (dx * dx)
-                  + U(tau_shift(coords, +1, X)) / (dx * dx))
-                     * (K(coords) * K(coords))
-               + (-2.0 * U(coords) / (dy * dy) + U(tau_shift(coords, -1, Y)) / (dy * dy)
-                  + U(tau_shift(coords, +1, Y)) / (dy * dy))
-                     * (K(coords) * K(coords))
-               + (-2.0 * U(coords) / (dz * dz) + U(tau_shift(coords, -1, Z)) / (dz * dz)
-                  + U(tau_shift(coords, +1, Z)) / (dz * dz))
-                     * (K(coords) * K(coords))
-               + PML_val)
-        + 2.0 * U_prev(coords) - U_prev_prev(coords);
+    for(Component component = X; component < n_Component; component++) {
+        real_t PML = 0.0;
+        for(Side side = BOTTOM; side < n_Side; side++) {
+            PML += (Phi(tau(coords, -1)) * sigma(tau(coords, -1))
+                    - Psi(tau(coords, +1)) * sigma(coords))
+                 / (dh[component] * dh[component]);
+        }
+        result += (dt * dt)
+                * (2.0
+                       * (-K(tau(coords, +1)) / (2.0 * dh[component])
+                          + K(tau(coords, -1)) / (2.0 * dh[component]))
+                       * (-U(tau(coords, +1)) / (2.0 * dh[component])
+                          + U(tau(coords, -1)) / (2.0 * dh[component]))
+                       * K(coords)
+                   + (-2.0 * U(coords) / (dh[component] * dh[component])
+                      + U(tau(coords, -1)) / (dh[component] * dh[component])
+                      + U(tau(coords, +1)) / (dh[component] * dh[component]))
+                         * (K(coords) * K(coords))
+                   + K(coords) * K(coords) * PML);
+    }
+    // -(d_Phi_x(i - 1, j, k) * sigma_x(i - 1, j, k) - d_Psi_x(i + 1, j, k) * sigma_x(i, j, k))
+    //     / (d_dx * d_dx)
+    // - (d_Phi_y(i, j - 1, k) * sigma_y(i, j - 1, k) - d_Psi_y(i, j + 1, k) * sigma_y(i, j, k))
+    //       / (d_dy * d_dy)
+    // - (d_Phi_z(i, j, k - 1) * sigma_z(i, j, k - 1) - d_Psi_z(i, j, k + 1) * sigma_z(i, j, k))
+    //       / (d_dz * d_dz);
 
     // printf("result: %.17lf\n", result);
     return result;
