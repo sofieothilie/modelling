@@ -53,20 +53,18 @@ int_t snapshot_freq;
     per((i), (d_Nx + PADDING)) * ((d_Ny + PADDING) * (d_Nz + PADDING))                             \
         + (per((j), d_Ny + PADDING)) * ((d_Nz + PADDING)) + (per((k), d_Nz + PADDING))
 
-#define pml_indexing(buffer, i, j, k) (get_buf(buffer, i, j, k))
-
-#define d_Psi_x(i, j, k) pml_indexing(d_psi_x, i, j, k)
-#define d_Psi_y(i, j, k) pml_indexing(d_psi_y, i, j, k)
-#define d_Psi_z(i, j, k) pml_indexing(d_psi_z, i, j, k)
-#define d_Phi_x(i, j, k) pml_indexing(d_phi_x, i, j, k)
-#define d_Phi_y(i, j, k) pml_indexing(d_phi_y, i, j, k)
-#define d_Phi_z(i, j, k) pml_indexing(d_phi_z, i, j, k)
+#define d_Psi_x(i, j, k) get_buf(d_psi_x, i, j, k)
+#define d_Psi_y(i, j, k) get_buf(d_psi_y, i, j, k)
+#define d_Psi_z(i, j, k) get_buf(d_psi_z, i, j, k)
+#define d_Phi_x(i, j, k) get_buf(d_phi_x, i, j, k)
+#define d_Phi_y(i, j, k) get_buf(d_phi_y, i, j, k)
+#define d_Phi_z(i, j, k) get_buf(d_phi_z, i, j, k)
 
 #define d_P_prv_prv(i, j, k) d_buffer_prv_prv[padded_index(i, j, k)]
 #define d_P_prv(i, j, k) d_buffer_prv[padded_index(i, j, k)]
 #define d_P(i, j, k) d_buffer[padded_index(i, j, k)]
 
-#define SIGMA (2 / d_dt)
+#define SIGMA (1.0f)
 
 bool init_cuda();
 void move_buffer_window();
@@ -181,7 +179,7 @@ __device__ real_t PML(int i,
                       Aux_variable d_psi_x,
                       Aux_variable d_psi_y,
                       Aux_variable d_psi_z) {
-    if (i < d_Nx - 1 || j < d_Ny - 1 || k < d_Nz - 1)
+    if(i < d_Nx - 1 || j < d_Ny - 1 || k < d_Nz - 1)
         return 0.0f;
 
     real_t result =
@@ -194,22 +192,22 @@ __device__ real_t PML(int i,
     return K(i, j, k) * K(i, j, k) * result;
 }
 
-__device__ real_t sigma_z(int_t i, int_t j, int_t k) {
-    if(k < 0 || k >= PADDING)
+__device__ real_t sigma(int_t i, int_t j, int_t k) {
+    if(i < d_Nx || j < d_Ny || k < d_Nz)
         return 0;
     return SIGMA;
+}
+
+__device__ real_t sigma_z(int_t i, int_t j, int_t k) {
+    return sigma(i, j, k);
 }
 
 __device__ real_t sigma_x(int_t i, int_t j, int_t k) {
-    if(j < 0 || j >= PADDING)
-        return 0;
-    return SIGMA;
+    return sigma(i, j, k);
 }
 
 __device__ real_t sigma_y(int_t i, int_t j, int_t k) {
-    if(j < 0 || j >= PADDING)
-        return 0;
-    return SIGMA;
+    return sigma(i, j, k);
 }
 
 #define padded_index_bottom(i, j, k)                                                               \
@@ -414,53 +412,59 @@ __device__ void update_all_aux_var_at_ijk_front(const real_t *d_buffer,
     int_t g_j = j + d_Ny;
     int_t g_k = k;
 
-    real_t next_phi_y = K(i, j + d_Ny, k)
-                          * (-0.5 / d_dy
-                                 * (sigma_y(i, j - 1, k) * get_buf_front(d_phi_y_prv, i, j - 1, k)
-                                    + sigma_y(i, j, k) * get_buf_front(d_phi_y_prv, i, j, k))
-                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
-                          * d_dt
-                      + get_buf_front(d_phi_y_prv, i, j, k);
+    real_t next_phi_y =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dy
+                   * (sigma_y(g_i, g_j - 1, g_k) * get_buf_front(d_phi_y_prv, i, j - 1, k)
+                      + sigma_y(g_i, g_j, g_k) * get_buf_front(d_phi_y_prv, i, j, k))
+               - 0.5 / d_dy * (d_P(g_i, g_j + 1, g_k) - d_P(g_i, g_j - 1, g_k)))
+            * d_dt
+        + get_buf_front(d_phi_y_prv, i, j, k);
 
-    real_t next_psi_y = K(i, j + d_Ny, k)
-                          * (-0.5 / d_dy
-                                 * (sigma_y(i, j - 1, k) * get_buf_front(d_psi_y_prv, i, j, k)
-                                    + sigma_y(i, j, k) * get_buf_front(d_psi_y_prv, i, j + 1, k))
-                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
-                          * d_dt
-                      + get_buf_front(d_psi_y_prv, i, j, k);
+    real_t next_psi_y =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dy
+                   * (sigma_y(g_i, g_j - 1, g_k) * get_buf_front(d_psi_y_prv, i, j, k)
+                      + sigma_y(g_i, g_j, g_k) * get_buf_front(d_psi_y_prv, i, j + 1, k))
+               - 0.5 / d_dy * (d_P(g_i, g_j + 1, g_k) - d_P(g_i, g_j - 1, g_k)))
+            * d_dt
+        + get_buf_front(d_psi_y_prv, i, j, k);
 
-    real_t next_phi_x = K(i + d_Nx, j + PADDING, k)
-                          * (-0.5 / d_dx
-                                 * (sigma_x(i - 1, j, k) * get_buf_front(d_phi_x_prv, i - 1, j, k)
-                                    + sigma_x(i, j, k) * get_buf_front(d_phi_x_prv, i, j, k))
-                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
-                          * d_dt
-                      + get_buf_front(d_phi_x_prv, i, j, k);
+    real_t next_phi_x =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dx
+                   * (sigma_x(g_i - 1, g_j, g_k) * get_buf_front(d_phi_x_prv, i - 1, j, k)
+                      + sigma_x(g_i, g_j, g_k) * get_buf_front(d_phi_x_prv, i, j, k))
+               - 0.5 / d_dx * (d_P(g_i + 1, g_j, g_k) - d_P(g_i - 1, g_j, g_k)))
+            * d_dt
+        + get_buf_front(d_phi_x_prv, i, j, k);
 
-    real_t next_psi_x = K(i + d_Nx, j + PADDING, k)
-                          * (-0.5 / d_dx
-                                 * (sigma_x(i - 1, j, k) * get_buf_front(d_psi_x_prv, i, j, k)
-                                    + sigma_x(i, j, k) * get_buf_front(d_psi_x_prv, i + 1, j, k))
-                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
-                          * d_dt
-                      + get_buf_front(d_psi_x_prv, i, j, k);
+    real_t next_psi_x =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dx
+                   * (sigma_x(g_i - 1, g_j, g_k) * get_buf_front(d_psi_x_prv, i, j, k)
+                      + sigma_x(g_i, g_j, g_k) * get_buf_front(d_psi_x_prv, i + 1, j, k))
+               - 0.5 / d_dx * (d_P(g_i + 1, g_j, g_k) - d_P(g_i - 1, g_j, g_k)))
+            * d_dt
+        + get_buf_front(d_psi_x_prv, i, j, k);
 
-    real_t next_phi_z = K(i, j, k + d_Nz)
-                          * (-0.5 / d_dz
-                                 * (sigma_z(i, j, k - 1) * get_buf_front(d_phi_z_prv, i, j, k - 1)
-                                    + sigma_z(i, j, k) * get_buf_front(d_phi_z_prv, i, j, k))
-                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
-                          * d_dt
-                      + get_buf_front(d_phi_z_prv, i, j, k);
+    real_t next_phi_z =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dz
+                   * (sigma_z(g_i, g_j, g_k - 1) * get_buf_front(d_phi_z_prv, i, j, k - 1)
+                      + sigma_z(g_i, g_j, g_k) * get_buf_front(d_phi_z_prv, i, j, k))
+               - 0.5 / d_dz * (d_P(g_i, g_j, g_k + 1) - d_P(g_i, g_j, g_k - 1)))
+            * d_dt
+        + get_buf_front(d_phi_z_prv, i, j, k);
 
-    real_t next_psi_z = K(i, j, k + d_Nz)
-                          * (-0.5 / d_dz
-                                 * (sigma_z(i, j, k - 1) * get_buf_front(d_psi_z_prv, i, j, k)
-                                    + sigma_z(i, j, k) * get_buf_front(d_psi_z_prv, i, j, k + 1))
-                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
-                          * d_dt
-                      + get_buf_front(d_psi_z_prv, i, j, k);
+    real_t next_psi_z =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dz
+                   * (sigma_z(g_i, g_j, g_k - 1) * get_buf_front(d_psi_z_prv, i, j, k)
+                      + sigma_z(g_i, g_j, g_k) * get_buf_front(d_psi_z_prv, i, j, k + 1))
+               - 0.5 / d_dz * (d_P(g_i, g_j, g_k + 1) - d_P(g_i, g_j, g_k - 1)))
+            * d_dt
+        + get_buf_front(d_psi_z_prv, i, j, k);
 
     set_buf_front(d_phi_y, next_phi_y, i, j, k);
     set_buf_front(d_psi_y, next_psi_y, i, j, k);
@@ -502,53 +506,59 @@ __device__ void update_all_aux_var_at_ijk_side(const real_t *d_buffer,
     int_t g_j = j;
     int_t g_k = k;
 
-    real_t next_phi_y = K(i, j + d_Ny, k)
-                          * (-0.5 / d_dy
-                                 * (sigma_y(i, j - 1, k) * get_buf_side(d_phi_y_prv, i, j - 1, k)
-                                    + sigma_y(i, j, k) * get_buf_side(d_phi_y_prv, i, j, k))
-                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
-                          * d_dt
-                      + get_buf_side(d_phi_y_prv, i, j, k);
+    real_t next_phi_y =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dy
+                   * (sigma_y(g_i, g_j - 1, g_k) * get_buf_side(d_phi_y_prv, i, j - 1, k)
+                      + sigma_y(g_i, g_j, g_k) * get_buf_side(d_phi_y_prv, i, j, k))
+               - 0.5 / d_dy * (d_P(g_i, g_j + 1, g_k) - d_P(g_i, g_j - 1, g_k)))
+            * d_dt
+        + get_buf_side(d_phi_y_prv, i, j, k);
 
-    real_t next_psi_y = K(i, j + d_Ny, k)
-                          * (-0.5 / d_dy
-                                 * (sigma_y(i, j - 1, k) * get_buf_side(d_psi_y_prv, i, j, k)
-                                    + sigma_y(i, j, k) * get_buf_side(d_psi_y_prv, i, j + 1, k))
-                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
-                          * d_dt
-                      + get_buf_side(d_psi_y_prv, i, j, k);
+    real_t next_psi_y =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dy
+                   * (sigma_y(g_i, g_j - 1, g_k) * get_buf_side(d_psi_y_prv, i, j, k)
+                      + sigma_y(g_i, g_j, g_k) * get_buf_side(d_psi_y_prv, i, j + 1, k))
+               - 0.5 / d_dy * (d_P(g_i, g_j + 1, g_k) - d_P(g_i, g_j - 1, g_k)))
+            * d_dt
+        + get_buf_side(d_psi_y_prv, i, j, k);
 
-    real_t next_phi_x = K(i + d_Nx, j + PADDING, k)
-                          * (-0.5 / d_dx
-                                 * (sigma_x(i - 1, j, k) * get_buf_side(d_phi_x_prv, i - 1, j, k)
-                                    + sigma_x(i, j, k) * get_buf_side(d_phi_x_prv, i, j, k))
-                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
-                          * d_dt
-                      + get_buf_side(d_phi_x_prv, i, j, k);
+    real_t next_phi_x =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dx
+                   * (sigma_x(g_i - 1, g_j, g_k) * get_buf_side(d_phi_x_prv, i - 1, j, k)
+                      + sigma_x(g_i, g_j, g_k) * get_buf_side(d_phi_x_prv, i, j, k))
+               - 0.5 / d_dx * (d_P(g_i + 1, g_j, g_k) - d_P(g_i - 1, g_j, g_k)))
+            * d_dt
+        + get_buf_side(d_phi_x_prv, i, j, k);
 
-    real_t next_psi_x = K(i + d_Nx, j + PADDING, k)
-                          * (-0.5 / d_dx
-                                 * (sigma_x(i - 1, j, k) * get_buf_side(d_psi_x_prv, i, j, k)
-                                    + sigma_x(i, j, k) * get_buf_side(d_psi_x_prv, i + 1, j, k))
-                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
-                          * d_dt
-                      + get_buf_side(d_psi_x_prv, i, j, k);
+    real_t next_psi_x =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dx
+                   * (sigma_x(g_i - 1, g_j, g_k) * get_buf_side(d_psi_x_prv, i, j, k)
+                      + sigma_x(g_i, g_j, g_k) * get_buf_side(d_psi_x_prv, i + 1, j, k))
+               - 0.5 / d_dx * (d_P(g_i + 1, g_j, g_k) - d_P(g_i - 1, g_j, g_k)))
+            * d_dt
+        + get_buf_side(d_psi_x_prv, i, j, k);
 
-    real_t next_phi_z = K(i, j, k + d_Nz)
-                          * (-0.5 / d_dz
-                                 * (sigma_z(i, j, k - 1) * get_buf_side(d_phi_z_prv, i, j, k - 1)
-                                    + sigma_z(i, j, k) * get_buf_side(d_phi_z_prv, i, j, k))
-                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
-                          * d_dt
-                      + get_buf_side(d_phi_z_prv, i, j, k);
+    real_t next_phi_z =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dz
+                   * (sigma_z(g_i, g_j, g_k - 1) * get_buf_side(d_phi_z_prv, i, j, k - 1)
+                      + sigma_z(g_i, g_j, g_k) * get_buf_side(d_phi_z_prv, i, j, k))
+               - 0.5 / d_dz * (d_P(g_i, g_j, g_k + 1) - d_P(g_i, g_j, g_k - 1)))
+            * d_dt
+        + get_buf_side(d_phi_z_prv, i, j, k);
 
-    real_t next_psi_z = K(i, j, k + d_Nz)
-                          * (-0.5 / d_dz
-                                 * (sigma_z(i, j, k - 1) * get_buf_side(d_psi_z_prv, i, j, k)
-                                    + sigma_z(i, j, k) * get_buf_side(d_psi_z_prv, i, j, k + 1))
-                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
-                          * d_dt
-                      + get_buf_side(d_psi_z_prv, i, j, k);
+    real_t next_psi_z =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dz
+                   * (sigma_z(g_i, g_j, g_k - 1) * get_buf_side(d_psi_z_prv, i, j, k)
+                      + sigma_z(g_i, g_j, g_k) * get_buf_side(d_psi_z_prv, i, j, k + 1))
+               - 0.5 / d_dz * (d_P(g_i, g_j, g_k + 1) - d_P(g_i, g_j, g_k - 1)))
+            * d_dt
+        + get_buf_side(d_psi_z_prv, i, j, k);
 
     set_buf_side(d_phi_y, next_phi_y, i, j, k);
     set_buf_side(d_psi_y, next_psi_y, i, j, k);
@@ -590,53 +600,59 @@ __device__ void update_all_aux_var_at_ijk_bottom(const real_t *d_buffer,
     int_t g_j = j;
     int_t g_k = k + d_Nz;
 
-    real_t next_phi_y = K(i, j + d_Ny, k)
-                          * (-0.5 / d_dy
-                                 * (sigma_y(i, j - 1, k) * get_buf_bottom(d_phi_y_prv, i, j - 1, k)
-                                    + sigma_y(i, j, k) * get_buf_bottom(d_phi_y_prv, i, j, k))
-                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
-                          * d_dt
-                      + get_buf_bottom(d_phi_y_prv, i, j, k);
+    real_t next_phi_y =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dy
+                   * (sigma_y(g_i, g_j - 1, g_k) * get_buf_bottom(d_phi_y_prv, i, j - 1, k)
+                      + sigma_y(g_i, g_j, g_k) * get_buf_bottom(d_phi_y_prv, i, j, k))
+               - 0.5 / d_dy * (d_P(g_i, g_j + 1, g_k) - d_P(g_i, g_j - 1, g_k)))
+            * d_dt
+        + get_buf_bottom(d_phi_y_prv, i, j, k);
 
-    real_t next_psi_y = K(i, j + d_Ny, k)
-                          * (-0.5 / d_dy
-                                 * (sigma_y(i, j - 1, k) * get_buf_bottom(d_psi_y_prv, i, j, k)
-                                    + sigma_y(i, j, k) * get_buf_bottom(d_psi_y_prv, i, j + 1, k))
-                             - 0.5 / d_dy * (d_P(i, j + 1, k) - d_P(i, j - 1, k)))
-                          * d_dt
-                      + get_buf_bottom(d_psi_y_prv, i, j, k);
+    real_t next_psi_y =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dy
+                   * (sigma_y(g_i, g_j - 1, g_k) * get_buf_bottom(d_psi_y_prv, i, j, k)
+                      + sigma_y(g_i, g_j, g_k) * get_buf_bottom(d_psi_y_prv, i, j + 1, k))
+               - 0.5 / d_dy * (d_P(g_i, g_j + 1, g_k) - d_P(g_i, g_j - 1, g_k)))
+            * d_dt
+        + get_buf_bottom(d_psi_y_prv, i, j, k);
 
-    real_t next_phi_x = K(i + d_Nx, j + PADDING, k)
-                          * (-0.5 / d_dx
-                                 * (sigma_x(i - 1, j, k) * get_buf_bottom(d_phi_x_prv, i - 1, j, k)
-                                    + sigma_x(i, j, k) * get_buf_bottom(d_phi_x_prv, i, j, k))
-                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
-                          * d_dt
-                      + get_buf_bottom(d_phi_x_prv, i, j, k);
+    real_t next_phi_x =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dx
+                   * (sigma_x(g_i - 1, g_j, g_k) * get_buf_bottom(d_phi_x_prv, i - 1, j, k)
+                      + sigma_x(g_i, g_j, g_k) * get_buf_bottom(d_phi_x_prv, i, j, k))
+               - 0.5 / d_dx * (d_P(g_i + 1, g_j, g_k) - d_P(g_i - 1, g_j, g_k)))
+            * d_dt
+        + get_buf_bottom(d_phi_x_prv, i, j, k);
 
-    real_t next_psi_x = K(i + d_Nx, j + PADDING, k)
-                          * (-0.5 / d_dx
-                                 * (sigma_x(i - 1, j, k) * get_buf_bottom(d_psi_x_prv, i, j, k)
-                                    + sigma_x(i, j, k) * get_buf_bottom(d_psi_x_prv, i + 1, j, k))
-                             - 0.5 / d_dx * (d_P(i + 1, j, k) - d_P(i - 1, j, k)))
-                          * d_dt
-                      + get_buf_bottom(d_psi_x_prv, i, j, k);
+    real_t next_psi_x =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dx
+                   * (sigma_x(g_i - 1, g_j, g_k) * get_buf_bottom(d_psi_x_prv, i, j, k)
+                      + sigma_x(g_i, g_j, g_k) * get_buf_bottom(d_psi_x_prv, i + 1, j, k))
+               - 0.5 / d_dx * (d_P(g_i + 1, g_j, g_k) - d_P(g_i - 1, g_j, g_k)))
+            * d_dt
+        + get_buf_bottom(d_psi_x_prv, i, j, k);
 
-    real_t next_phi_z = K(i, j, k + d_Nz)
-                          * (-0.5 / d_dz
-                                 * (sigma_z(i, j, k - 1) * get_buf_bottom(d_phi_z_prv, i, j, k - 1)
-                                    + sigma_z(i, j, k) * get_buf_bottom(d_phi_z_prv, i, j, k))
-                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
-                          * d_dt
-                      + get_buf_bottom(d_phi_z_prv, i, j, k);
+    real_t next_phi_z =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dz
+                   * (sigma_z(g_i, g_j, g_k - 1) * get_buf_bottom(d_phi_z_prv, i, j, k - 1)
+                      + sigma_z(g_i, g_j, g_k) * get_buf_bottom(d_phi_z_prv, i, j, k))
+               - 0.5 / d_dz * (d_P(g_i, g_j, g_k + 1) - d_P(g_i, g_j, g_k - 1)))
+            * d_dt
+        + get_buf_bottom(d_phi_z_prv, i, j, k);
 
-    real_t next_psi_z = K(i, j, k + d_Nz)
-                          * (-0.5 / d_dz
-                                 * (sigma_z(i, j, k - 1) * get_buf_bottom(d_psi_z_prv, i, j, k)
-                                    + sigma_z(i, j, k) * get_buf_bottom(d_psi_z_prv, i, j, k + 1))
-                             - 0.5 / d_dz * (d_P(i, j, k + 1) - d_P(i, j, k - 1)))
-                          * d_dt
-                      + get_buf_bottom(d_psi_z_prv, i, j, k);
+    real_t next_psi_z =
+        K(g_i, g_j, g_k)
+            * (-0.5 / d_dz
+                   * (sigma_z(g_i, g_j, g_k - 1) * get_buf_bottom(d_psi_z_prv, i, j, k)
+                      + sigma_z(g_i, g_j, g_k) * get_buf_bottom(d_psi_z_prv, i, j, k + 1))
+               - 0.5 / d_dz * (d_P(g_i, g_j, g_k + 1) - d_P(g_i, g_j, g_k - 1)))
+            * d_dt
+        + get_buf_bottom(d_psi_z_prv, i, j, k);
 
     set_buf_bottom(d_phi_y, next_phi_y, i, j, k);
     set_buf_bottom(d_psi_y, next_psi_y, i, j, k);
@@ -931,9 +947,9 @@ __global__ void emit_source(real_t *d_buffer, double t) {
     int k = blockIdx.z * blockDim.z + threadIdx.z;
 
     int sine_x = d_Nx / 4;
-    double freq = 1e6; // 1MHz
+    double freq = 1.0e6; // 1MHz
 
-    if(i == sine_x && j == d_Ny / 2 && k == d_Nz / 2 && t * freq < 1) {
+    if(i == sine_x && j == d_Ny / 2 && k == d_Nz / 2 && t * freq < 1.0) {
         d_P(sine_x, d_Ny / 2, d_Nz / 2) = sin(2 * M_PI * t * freq);
     }
 }
