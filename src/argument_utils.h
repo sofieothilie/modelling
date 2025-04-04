@@ -1,9 +1,9 @@
-#ifndef _ARGUMENT_UTILS_H_
-#define _ARGUMENT_UTILS_H_
+#pragma once
 
 #include <stdint.h>
-#include "simulation.h"
 
+typedef int32_t int_t;
+typedef double real_t;
 
 typedef struct options_struct {
     real_t sim_Lx, sim_Ly, sim_Lz;
@@ -17,5 +17,3 @@ typedef struct options_struct {
 OPTIONS *parse_args ( int argc, char **argv );
 
 void help ( char const *exec, char const opt, char const *optarg );
-
-#endif

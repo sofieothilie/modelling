@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    printf("allocate %d bytes\n", MODEL_Nx*MODEL_Ny*sizeof(double));
+    printf("allocate %lu bytes\n", MODEL_Nx*MODEL_Ny*sizeof(double));
     double* model = calloc(MODEL_Nx*MODEL_Ny, sizeof(double));
 
     if (model == NULL) {

@@ -36,13 +36,13 @@ build_cuda:
 
 NVCC_FLAGS = -O0 -I./src
 
-build: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/gauss_seidel.cu src/PML.cu src/simulation.cu
+build: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/simulation.cu
 	nvcc $(NVCC_FLAGS) $^ -o bin/modeling_cmd
 
 
 console: 
 	mkdir -p wave_data
-	./bin/modeling_cmd -x 0.01 -y 0.01 -z 0.01 -X 100 -Y 100 -Z 100 -t 1e-9 -i 10000 -s 10
+	./bin/modeling_cmd -x 0.01 -y 0.01 -z 0.01 -X 100 -Y 100 -Z 100 -t 1e-8 -i 1000 -s 10
 
 
 visu: run plot movie

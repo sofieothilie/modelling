@@ -1,21 +1,16 @@
 #ifndef SIMULATION_H
 #define SIMULATION_H
 
+#include <stdint.h>
+
 typedef int32_t int_t;
 typedef double real_t;
 
-#include <stdint.h>
-
-#include "PML.h"
-
-
-#define PADDING 5
-
-#define WATER_K 1500
-#define PLASTIC_K 2270
-
-#define MODEL_NX 1201
-#define MODEL_NY 401
+typedef struct {
+    real_t *bottom;
+    real_t *side;
+    real_t *front;
+} Aux_variable;
 
 // total size of simulation
 // 5x1x1 cm tube of water
@@ -34,19 +29,6 @@ typedef double real_t;
 
 
 
-#define MODEL_AT(i, j) model[i + j * MODEL_NX]
-
-#define per(i, n) ((i + n) % n)
-
-#define padded_index(i, j, k)                                                                      \
-    per(i, d_Nx) * ((d_Ny) * (d_Nz)) + (per(j, d_Ny)) * ((d_Nz)) + (per(k, d_Nz))
-
-#define d_P_prv_prv(i, j, k) d_buffer_prv_prv[padded_index(i, j, k)]
-#define d_P_prv(i, j, k) d_buffer_prv[padded_index(i, j, k)]
-#define d_P(i, j, k) d_buffer[padded_index(i, j, k)]
-
-#define WALLTIME(t) ((double) (t).tv_sec + 1e-6 * (double) (t).tv_usec)
-
 typedef struct {
     double *model_data;
     // int_t model_nx, model_ny;//this will be hardcoded for the 2d model. need to see for 3d model
@@ -55,36 +37,6 @@ typedef struct {
     double dt;
     int max_iter, snapshot_freq;
 } simulation_parameters;
-
-extern  int_t Nx, Ny, Nz;
-
-extern  int_t d_Nx, d_Ny, d_Nz;
-extern  double d_dt, d_dx, d_dy, d_dz;
-extern  double d_sim_Lx, d_sim_Ly, d_sim_Lz;
-
-extern real_t *d_buffer_prv_prv, *d_buffer_prv, *d_buffer;
-
- double K(int_t i, int_t j, int_t k);
-
- void gauss_seidel_red(real_t *d_buffer,
-                                 real_t *d_buffer_prv,
-                                 real_t *d_buffer_prv_prv,
-                                 Aux_variable d_phi_x,
-                                 Aux_variable d_phi_y,
-                                 Aux_variable d_phi_z,
-                                 Aux_variable d_psi_x,
-                                 Aux_variable d_psi_y,
-                                 Aux_variable d_psi_z);
-
- void gauss_seidel_black(real_t *d_buffer,
-                                   real_t *d_buffer_prv,
-                                   real_t *d_buffer_prv_prv,
-                                   Aux_variable d_phi_x,
-                                   Aux_variable d_phi_y,
-                                   Aux_variable d_phi_z,
-                                   Aux_variable d_psi_x,
-                                   Aux_variable d_psi_y,
-                                   Aux_variable d_psi_z);
 
 #ifdef __cplusplus
 extern "C" {
