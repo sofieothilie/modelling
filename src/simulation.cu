@@ -88,11 +88,6 @@ bool init_cuda() {
     return true;
 }
 
-int_t get_domain_size(const int_t Nx, const int_t Ny, const int_t Nz, const int_t padding) {
-    const int_t domain_size = (Nx + padding) * (Ny + padding) * (Nz + padding);
-    return domain_size;
-}
-
 int_t get_PML_size(const Dimensions d, const Side s) {
     switch(s) {
         case BOTTOM:
@@ -161,7 +156,7 @@ int_t get_domain_size(const Dimensions dimensions) {
     int_t Nz = dimensions.Nz;
     int_t padding = dimensions.padding;
 
-    return (Nx * padding) * (Ny + padding) * (Nz + padding);
+    return (Nx + padding) * (Ny + padding) * (Nz + padding);
 }
 
 real_t *allocate_domain(const Dimensions dimensions) {
@@ -179,56 +174,11 @@ void free_domain(real_t *buf) {
     cudaErrorCheck(cudaFree(buf));
 }
 
-void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
-    static int_t iter = 0;
-
-    int_t Nx = dimensions.Nx;
-    int_t Ny = dimensions.Ny;
-    int_t Nz = dimensions.Nz;
-    int_t padding = dimensions.padding;
-
-    int_t size = get_domain_size(dimensions);
-    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
-    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer, sizeof(real_t) * size, cudaMemcpyDeviceToHost));
-
-    char filename[256];
-    sprintf(filename, "wave_data/%.5d.dat", iter);
-    FILE *out = fopen(filename, "w");
-    if(!out) {
-        fprintf(stderr, "Could not open file '%s'!\n", filename);
-        exit(EXIT_FAILURE);
-    }
-
-    int_t k = Nz / 2;
-    for(int j = 0; j < Ny + padding; j++) {
-        int i;
-        for(i = 0; i < Nx + padding - 1; i++) {
-            int w =
-                fprintf(out,
-                        "%.16lf ",
-                        (h_buffer[i * ((Ny + padding) * (Nz + padding)) + j * (Nz + padding) + k])
-                            / 1.47183118e-05);
-            if(w < 0)
-                printf("could not write all\n");
-        }
-        int w = fprintf(out,
-                        "%.16lf\n",
-                        (h_buffer[i * ((Ny + padding) * (Nz + padding)) + j * (Nz + padding) + k])
-                            / 1.47183118e-05);
-        if(w < 0)
-            printf("could not write all\n");
-    }
-
-    free(h_buffer);
-    fclose(out);
-    iter++;
-}
-
-__device__ int_t per(const int_t a, const int_t m) {
+__host__ __device__ int_t per(const int_t a, const int_t m) {
     return (a + m) % m;
 }
 
-__device__ int_t gcoords_to_index(const Coords gcoords, const Dimensions dimensions) {
+__host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
     const int_t k = gcoords.z;
@@ -240,6 +190,51 @@ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimensions dimensi
 
     return per(i, Nx + padding) * (Ny + padding) * (Nz + padding)
          + per(j, Ny + padding) * (Nz + padding) + per(k, Nz + padding);
+}
+
+void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
+    static int_t iter = 0;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const int_t size = get_domain_size(dimensions);
+    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
+    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer, sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+
+    char filename[256];
+    sprintf(filename, "wave_data/%.5d.dat", iter);
+    FILE *const out = fopen(filename, "w");
+    if(!out) {
+        fprintf(stderr, "Could not open file '%s'!\n", filename);
+        exit(EXIT_FAILURE);
+    }
+
+    const int_t k = Nz / 2;
+    for(int j = 0; j < Ny + padding; j++) {
+        int i;
+        for(i = 0; i < Nx + padding - 1; i++) {
+            const Coords gcoords = { .x = i, .y = j, .z = k };
+            const int w =
+                fprintf(out,
+                        "%.16lf ",
+                        (h_buffer[gcoords_to_index(gcoords, dimensions)]) / 1.47183118e-05);
+            if(w < 0)
+                printf("could not write all\n");
+        }
+        const Coords gcoords = { .x = i, .y = j, .z = k };
+        const int w = fprintf(out,
+                              "%.16lf\n",
+                              (h_buffer[gcoords_to_index(gcoords, dimensions)]) / 1.47183118e-05);
+        if(w < 0)
+            printf("could not write all\n");
+    }
+
+    free(h_buffer);
+    fclose(out);
+    iter++;
 }
 
 #define U(gcoords) U[gcoords_to_index(gcoords, dimensions)]
@@ -255,12 +250,12 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
 
-    int sine_x = Nx / 4;
+    int sine_x = 2 * Nx / 3;
     double freq = 1.0e6; // 1MHz
 
     if(i == sine_x && j == Ny / 4 && k == Nz / 2) {
         if(t * freq < 1.0) {
-            Coords gcoords = { sine_x, Ny / 4, Nz / 2 };
+            Coords gcoords = { sine_x, 2 * Ny / 3, Nz / 2 };
             U(gcoords) = sin(2 * M_PI * t * freq);
         }
     }
@@ -402,6 +397,10 @@ __device__ Coords gcoords_to_lcoords(const Coords gcoords,
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
+    if(in_physical_domain(gcoords, dimensions)) {
+        printf("Called gcoords_to_lcoords from phisical domain (%d, %d, %d)\n", i, j, k);
+    }
+
     switch(side) {
         case BOTTOM:
             return { .x = i, .y = j, .z = k - Nz };
@@ -455,15 +454,15 @@ __device__ real_t get_sigma(const Coords gcoords,
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
-    const int_t dt = dimensions.dt;
+    const int_t dh = dimensions.dh[component];
 
     const int_t i = per(gcoords.x, Nx + padding);
     const int_t j = per(gcoords.y, Ny + padding);
     const int_t k = per(gcoords.z, Nz + padding);
 
-    const real_t SIGMA = 1.0;
+    const real_t SIGMA = 2.0;
 
-    if(i < Nx && j < Ny && k < Nz)
+    if(in_physical_domain(gcoords, dimensions))
         return 0.0;
     return SIGMA;
 }
@@ -483,57 +482,46 @@ __device__ int_t lcoords_to_index(const Coords lcoords,
 
     switch(side) {
         case BOTTOM:
-            return per(i, Nx + padding) * (Ny + padding) * padding + per(j, Nz + padding) * padding
-                 + per(k, padding);
+            return i * (Ny + padding) * padding + j * padding + k;
         case SIDE:
-            return per(i, padding) + per(j, Ny + padding) * padding
-                 + per(k, Nz) * (Ny + padding) * padding;
+            return i + j * padding + k * (Ny + padding) * padding;
         case FRONT:
-            return per(i, Nx) * padding + per(j, Nz) * padding * (Nx + padding) + per(k, padding);
+            return i * padding + j * padding * (Nx + padding) + k;
     }
 }
 
 __device__ real_t get_PML_var(const PML_variable_XYZ var,
-                              const Coords lcoords,
-                              const Dimensions dimensions,
-                              const Side side) {
+                              const Coords gcoords,
+                              const Dimensions dimensions) {
+    const Side side = get_side(gcoords, dimensions);
+    const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
+
     return var.buf[side][lcoords_to_index(lcoords, dimensions, side)];
 }
 
 __device__ void set_PML_var(const PML_variable_XYZ var,
                             const real_t value,
-                            const Coords lcoords,
-                            const Dimensions dimensions,
-                            const Side side) {
+                            const Coords gcoords,
+                            const Dimensions dimensions) {
+    const Side side = get_side(gcoords, dimensions);
+    const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
+
     var.buf[side][lcoords_to_index(lcoords, dimensions, side)] = value;
 }
 
 #define tau(coords, shift) (tau_shift(coords, shift, component))
 #define K(gcoords) (get_K(gcoords, dimensions))
 #define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
-#define Psi(lcoords) (get_PML_var(Psi.var[component], lcoords, dimensions, side))
-#define Phi(lcoords) (get_PML_var(Phi.var[component], lcoords, dimensions, side))
-#define set_Psi(lcoords, value) (set_PML_var(Psi.var[component], value, lcoords, dimensions, side))
-#define set_Phi(lcoords, value) (set_PML_var(Phi.var[component], value, lcoords, dimensions, side))
+#define Psi(lcoords) (get_PML_var(Psi.var[component], gcoords, dimensions))
+#define Phi(lcoords) (get_PML_var(Phi.var[component], gcoords, dimensions))
+#define set_Psi(lcoords, value) (set_PML_var(Psi.var[component], value, gcoords, dimensions))
+#define set_Phi(lcoords, value) (set_PML_var(Phi.var[component], value, gcoords, dimensions))
 
 void move_buffer_window(real_t **const U, real_t **const U_prev, real_t **const U_prev_prev) {
     real_t *const temp = *U_prev_prev;
     *U_prev_prev = *U_prev;
     *U_prev = *U;
     *U = temp;
-}
-
-__global__ void visualize_Phi(real_t *const U,
-                              const PML_variable Phi,
-                              const Dimensions dimensions,
-                              const Side side,
-                              const Component component) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-    const Coords lcoords = { .x = i, .y = j, .z = k };
-
-    U(lcoords_to_gcoords(lcoords, dimensions, side)) = Phi(lcoords);
 }
 
 __global__ void set_random_values(real_t *const U, const Dimensions dimensions) {
@@ -543,19 +531,6 @@ __global__ void set_random_values(real_t *const U, const Dimensions dimensions) 
     const Coords gcoords = { .x = i, .y = j, .z = k };
 
     U(gcoords) = (i - 2 * j + k) % (i + j + k);
-}
-
-__global__ void visualize_Psi(real_t *const U,
-                              const PML_variable Psi,
-                              const Dimensions dimensions,
-                              const Side side,
-                              const Component component) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-    const Coords lcoords = { .x = i, .y = j, .z = k };
-
-    U(lcoords_to_gcoords(lcoords, dimensions, side)) = Psi(lcoords);
 }
 
 __device__ bool in_bounds(const Coords gcoords, const Dimensions dimensions) {
@@ -591,9 +566,6 @@ __device__ real_t gauss_seidel(const real_t *const U,
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
         if(!in_physical_domain(gcoords, dimensions)) {
-            const Side side = get_side(gcoords, dimensions);
-            const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
-
             PML += K(gcoords) * K(gcoords)
                  * (Phi(tau(lcoords, -1)) * sigma(tau(gcoords, -1))
                     - Psi(tau(lcoords, +1)) * sigma(gcoords))
