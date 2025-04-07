@@ -250,12 +250,12 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
 
-    int sine_x = 2 * Nx / 3;
+    int sine_x = Nx / 10;
     double freq = 1.0e6; // 1MHz
 
     if(i == sine_x && j == Ny / 4 && k == Nz / 2) {
         if(t * freq < 1.0) {
-            Coords gcoords = { sine_x, 2 * Ny / 3, Nz / 2 };
+            Coords gcoords = { sine_x, Ny / 2, Nz / 2 };
             U(gcoords) = sin(2 * M_PI * t * freq);
         }
     }
@@ -460,14 +460,13 @@ __device__ real_t get_sigma(const Coords gcoords,
     const int_t j = per(gcoords.y, Ny + padding);
     const int_t k = per(gcoords.z, Nz + padding);
 
-    const real_t SIGMA = 2.0;
+    const real_t SIGMA = 5.0;
 
     if(in_physical_domain(gcoords, dimensions))
         return 0.0;
     return SIGMA;
 }
 
-// TODO: Handle borders to different PML partitions
 __device__ int_t lcoords_to_index(const Coords lcoords,
                                   const Dimensions dimensions,
                                   const Side side) {
