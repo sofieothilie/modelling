@@ -258,9 +258,9 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     int sine_x = Nx / 4;
     double freq = 1.0e6; // 1MHz
 
-    if(i == sine_x && j == Ny / 2 && k == Nz / 2) {
+    if(i == sine_x && j == Ny / 4 && k == Nz / 2) {
         if(t * freq < 1.0) {
-            Coords gcoords = { sine_x, Ny / 2, Nz / 2 };
+            Coords gcoords = { sine_x, Ny / 4, Nz / 2 };
             U(gcoords) = sin(2 * M_PI * t * freq);
         }
     }
@@ -300,6 +300,24 @@ dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
     }
 }
 
+__device__ bool in_physical_domain(const Coords gcoords, const Dimensions dimensions) {
+    const int_t i = gcoords.x;
+    const int_t j = gcoords.y;
+    const int_t k = gcoords.z;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+
+    if(i < 0 || j < 0 || k < 0)
+        return false;
+
+    if(i < Nx && j < Ny && k < Nz)
+        return true;
+
+    return false;
+}
+
 __device__ bool in_PML(const Coords lcoords, const Dimensions dimensions, const Side side) {
     const int_t i = lcoords.x;
     const int_t j = lcoords.y;
@@ -329,6 +347,27 @@ __device__ bool in_PML(const Coords lcoords, const Dimensions dimensions, const 
     }
 
     return false;
+}
+
+__device__ Side get_side(const Coords gcoords, const Dimensions dimensions) {
+    const int_t i = gcoords.x;
+    const int_t j = gcoords.y;
+    const int_t k = gcoords.z;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+
+    if(k >= Nz) {
+        return BOTTOM;
+    } else if(i >= Nx) {
+        return SIDE;
+    } else if(j >= Ny) {
+        return FRONT;
+    } else {
+        printf("Called `get_side` outside the PML!\n");
+        return BOTTOM;
+    }
 }
 
 __device__ Coords lcoords_to_gcoords(const Coords lcoords, const Dimensions dimensions, Side side) {
@@ -389,13 +428,14 @@ __device__ Coords tau_shift(const Coords gcoords, const int_t shift, const Compo
 }
 
 __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
-    const int_t i = gcoords.x;
-    const int_t j = gcoords.y;
-    const int_t k = gcoords.z;
-
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const int_t i = per(gcoords.x, Nx + padding);
+    const int_t j = per(gcoords.y, Ny + padding);
+    const int_t k = per(gcoords.z, Nz + padding);
 
     const real_t WATER_K = 1500.0;
     const real_t PLASTIC_K = 2270.0;
@@ -411,14 +451,15 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
 __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
-    const int_t i = gcoords.x;
-    const int_t j = gcoords.y;
-    const int_t k = gcoords.z;
-
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
     const int_t dt = dimensions.dt;
+
+    const int_t i = per(gcoords.x, Nx + padding);
+    const int_t j = per(gcoords.y, Ny + padding);
+    const int_t k = per(gcoords.z, Nz + padding);
 
     const real_t SIGMA = 1.0;
 
@@ -549,34 +590,31 @@ __device__ real_t gauss_seidel(const real_t *const U,
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
-        for(Side side = BOTTOM; side < N_SIDES; side++) {
+        if(!in_physical_domain(gcoords, dimensions)) {
+            const Side side = get_side(gcoords, dimensions);
             const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
-            if(in_PML(lcoords, dimensions, side)) {
-                PML += K(gcoords) * K(gcoords)
-                     * (Phi(tau(lcoords, -1)) * sigma(tau(gcoords, -1))
-                        - Psi(tau(lcoords, +1)) * sigma(gcoords))
-                     / (dh * dh);
 
-                const real_t phi_value =
-                    Phi(lcoords)
-                    + dt
-                          * (-K(gcoords) * sigma(tau(gcoords, -1)) * Phi(tau(lcoords, -1))
-                                 / (2.0 * dh)
-                             - K(gcoords) * sigma(gcoords) * Phi(lcoords) / (2.0 * dh)
-                             - K(gcoords) * (U(tau(gcoords, +1)) - U(tau(gcoords, -1)))
-                                   / (2.0 * dh));
+            PML += K(gcoords) * K(gcoords)
+                 * (Phi(tau(lcoords, -1)) * sigma(tau(gcoords, -1))
+                    - Psi(tau(lcoords, +1)) * sigma(gcoords))
+                 / (dh * dh);
 
-                const real_t psi_value =
-                    Psi(lcoords)
-                    + dt
-                          * (-K(gcoords) * sigma(tau(gcoords, -1)) * Psi(lcoords) / (2.0 * dh)
-                             - K(gcoords) * sigma(gcoords) * Psi(tau(lcoords, +1)) / (2.0 * dh)
-                             - K(gcoords) * (U(tau(gcoords, +1)) - U(tau(gcoords, -1)))
-                                   / (2.0 * dh));
+            const real_t phi_value =
+                Phi(lcoords)
+                + dt
+                      * (-K(gcoords) * sigma(tau(gcoords, -1)) * Phi(tau(lcoords, -1)) / (2.0 * dh)
+                         - K(gcoords) * sigma(gcoords) * Phi(lcoords) / (2.0 * dh)
+                         - K(gcoords) * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) / (2.0 * dh));
 
-                set_Phi(lcoords, phi_value);
-                set_Psi(lcoords, psi_value);
-            }
+            const real_t psi_value =
+                Psi(lcoords)
+                + dt
+                      * (-K(gcoords) * sigma(tau(gcoords, -1)) * Psi(lcoords) / (2.0 * dh)
+                         - K(gcoords) * sigma(gcoords) * Psi(tau(lcoords, +1)) / (2.0 * dh)
+                         - K(gcoords) * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) / (2.0 * dh));
+
+            set_Phi(lcoords, phi_value);
+            set_Psi(lcoords, psi_value);
         }
 
         result += (dt * dt)
@@ -588,12 +626,6 @@ __device__ real_t gauss_seidel(const real_t *const U,
                          * (K(gcoords) * K(gcoords))
                    + PML);
     }
-    // -(d_Phi_x(i - 1, j, k) * sigma_x(i - 1, j, k) - d_Psi_x(i + 1, j, k) * sigma_x(i, j, k))
-    //     / (d_dx * d_dx)
-    // - (d_Phi_y(i, j - 1, k) * sigma_y(i, j - 1, k) - d_Psi_y(i, j + 1, k) * sigma_y(i, j, k))
-    //       / (d_dy * d_dy)
-    // - (d_Phi_z(i, j, k - 1) * sigma_z(i, j, k - 1) - d_Psi_z(i, j, k + 1) * sigma_z(i, j, k))
-    //       / (d_dz * d_dz);
 
     return result;
 }
