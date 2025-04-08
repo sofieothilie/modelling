@@ -88,17 +88,6 @@ bool init_cuda() {
     return true;
 }
 
-int_t get_PML_size(const Dimensions d, const Side s) {
-    switch(s) {
-        case BOTTOM:
-            return (d.Nx + d.padding) * (d.Ny + d.padding) * d.padding;
-        case SIDE:
-            return (d.Ny + d.padding) * d.Nz * d.padding;
-        case FRONT:
-            return d.Nx * d.Nz * d.padding;
-    }
-}
-
 int_t get_side_size(const Dimensions dimensions, const Side side) {
     int_t Nx = dimensions.Nx;
     int_t Ny = dimensions.Ny;
@@ -246,12 +235,10 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
 
-    int sine_x = Nx / 10;
-    double freq = 1.0e6; // 1MHz
-
-    if(i == sine_x && j == Ny / 4 && k == Nz / 2) {
+    const Coords gcoords = { Nx / 2, Ny / 2, Nz / 2 };
+    const double freq = 1.0e6; // 1MHz
+    if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
         if(t * freq < 1.0) {
-            Coords gcoords = { sine_x, Ny / 2, Nz / 2 };
             U(gcoords) = sin(2 * M_PI * t * freq);
         }
     }
@@ -266,15 +253,6 @@ dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
     const int_t block_y = block.y;
     const int_t block_z = block.z;
 
-    dim3 pml_bottom_gridSize((Nx + padding + block_x - 1) / block_x,
-                             (Ny + padding + block_y - 1) / block_y,
-                             (padding + block_z - 1) / block_z);
-    dim3 pml_side_gridSize((padding + block_x - 1) / block_x,
-                           (Ny + padding + block_y - 1) / block_y,
-                           (Nz + block_z - 1) / block_z);
-    dim3 pml_front_gridSize((Nx + block_x - 1) / block_x,
-                            (padding + block_y - 1) / block_y,
-                            (Nz + block_z - 1) / block_z);
     switch(side) {
         case BOTTOM:
             return dim3((Nx + padding + block_x - 1) / block_x,
@@ -466,7 +444,7 @@ __device__ real_t get_sigma(const Coords gcoords,
     const int_t j = per(gcoords.y, Ny + padding);
     const int_t k = per(gcoords.z, Nz + padding);
 
-    const real_t SIGMA = 1.0;
+    const real_t SIGMA = 2.0;
 
     if(in_physical_domain(gcoords, dimensions))
         return 0.0;
@@ -502,6 +480,8 @@ __device__ real_t get_PML_var(const PML_variable_XYZ var,
         return 0.0;
 
     const Side side = get_side(gcoords, dimensions);
+    if(side != FRONT)
+        return 0.0;
     const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
 
     return var.buf[side][lcoords_to_index(lcoords, dimensions, side)];
@@ -515,6 +495,8 @@ __device__ void set_PML_var(const PML_variable_XYZ var,
         return;
 
     const Side side = get_side(gcoords, dimensions);
+    if(side != FRONT)
+        return;
     const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
 
     var.buf[side][lcoords_to_index(lcoords, dimensions, side)] = value;
@@ -587,27 +569,27 @@ __device__ real_t gauss_seidel(const real_t *const U,
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
-        // if(!in_physical_domain(gcoords, dimensions)) {
-        //     PML += K(gcoords) * K(gcoords)
-        //          * (Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1))
-        //             - Psi(tau(gcoords, +1)) * sigma(gcoords))
-        //          / (dh * dh);
+        if(!in_physical_domain(gcoords, dimensions)) {
+            PML += K(gcoords) * K(gcoords)
+                 * (sigma(gcoords) * Psi(tau(gcoords, +1))
+                    - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
+                 / (dh * dh);
 
-        //     const real_t phi_value =
-        //         (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
-        //          - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-        //          + Phi_prev(gcoords) / dt)
-        //         * (dt + (2.0 * dh) / sigma(gcoords));
+            const real_t phi_value =
+                (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                 + Phi_prev(gcoords) / dt)
+                / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
 
-        //     const real_t psi_value =
-        //         (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
-        //          - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-        //          + Psi_prev(gcoords) / dt)
-        //         * (dt + (2.0 * dh) / sigma(tau(gcoords, -1)));
+            const real_t psi_value =
+                (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                 + Psi_prev(gcoords) / dt)
+                / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
 
-        //     set_Phi(gcoords, phi_value);
-        //     set_Psi(gcoords, psi_value);
-        // }
+            set_Phi(gcoords, phi_value);
+            set_Psi(gcoords, psi_value);
+        }
 
         result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
                     * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh)
