@@ -53,7 +53,7 @@ def plot_data_3d(file_path, output_path):
 
 def plot_data_2d(file_path, output_path):
     data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
-    plt.imshow(data, vmin=-1, vmax=1, cmap='seismic')
+    plt.imshow(data, norm=SymLogNorm(linthresh=1e-3, vmin=-1, vmax=1), cmap='seismic')
     plt.colorbar()
     plt.savefig(output_path)
     plt.close()
@@ -92,7 +92,7 @@ def plot_data_1d(file_path, output_path):
 def process_file(data_file):
     output_file = data_file.replace(".dat", ".png").replace("wave_data", "wave_images")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    plot_data_1d(data_file, output_file)
+    plot_data_2d(data_file, output_file)
     print(f"Plot saved to {output_file}")
 
 def main():
