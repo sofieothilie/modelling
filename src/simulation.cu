@@ -467,9 +467,9 @@ __device__ int_t lcoords_to_index(const Coords lcoords,
         case BOTTOM:
             return i * (Ny + padding) * padding + j * padding + k;
         case SIDE:
-            return i + j * padding + k * (Ny + padding) * padding;
+            return i * ((Ny + padding) * Nz) + j * Nz + k;
         case FRONT:
-            return i * padding + j * padding * (Nx + padding) + k;
+            return i * (padding * Nz) + j * Nz + k;
     }
 }
 
@@ -480,8 +480,6 @@ __device__ real_t get_PML_var(const PML_variable_XYZ var,
         return 0.0;
 
     const Side side = get_side(gcoords, dimensions);
-    if(side != FRONT)
-        return 0.0;
     const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
 
     return var.buf[side][lcoords_to_index(lcoords, dimensions, side)];
@@ -495,8 +493,6 @@ __device__ void set_PML_var(const PML_variable_XYZ var,
         return;
 
     const Side side = get_side(gcoords, dimensions);
-    if(side != FRONT)
-        return;
     const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
 
     var.buf[side][lcoords_to_index(lcoords, dimensions, side)] = value;
