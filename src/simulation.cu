@@ -181,47 +181,6 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
          + per(j, Ny + padding) * (Nz + padding) + per(k, Nz + padding);
 }
 
-void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
-    static int_t iter = 0;
-
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
-    const int_t padding = dimensions.padding;
-
-    const int_t size = get_domain_size(dimensions);
-    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
-    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer, sizeof(real_t) * size, cudaMemcpyDeviceToHost));
-
-    char filename[256];
-    sprintf(filename, "wave_data/%.5d.dat", iter);
-    FILE *const out = fopen(filename, "w");
-    if(!out) {
-        fprintf(stderr, "Could not open file '%s'!\n", filename);
-        exit(EXIT_FAILURE);
-    }
-
-    const int_t k = Nz / 2;
-    for(int j = 0; j < Ny + padding; j++) {
-        int i;
-        for(i = 0; i < Nx + padding - 1; i++) {
-            const Coords gcoords = { .x = i, .y = j, .z = k };
-            const int w =
-                fprintf(out, "%.16lf ", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
-            if(w < 0)
-                printf("could not write all\n");
-        }
-        const Coords gcoords = { .x = i, .y = j, .z = k };
-        const int w = fprintf(out, "%.16lf\n", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
-        if(w < 0)
-            printf("could not write all\n");
-    }
-
-    free(h_buffer);
-    fclose(out);
-    iter++;
-}
-
 #define U(gcoords) U[gcoords_to_index(gcoords, dimensions)]
 #define U_prev(gcoords) U_prev[gcoords_to_index(gcoords, dimensions)]
 #define U_prev_prev(gcoords) U_prev_prev[gcoords_to_index(gcoords, dimensions)]
@@ -235,7 +194,7 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
 
-    const Coords gcoords = { Nx / 2, Ny / 2, Nz / 2 };
+    const Coords gcoords = { 4 * Nx / 5, 4 * Ny / 5, Nz / 2 };
     const double freq = 1.0e6; // 1MHz
     if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
         if(t * freq < 1.0) {
@@ -269,7 +228,7 @@ dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
     }
 }
 
-__device__ bool in_physical_domain(const Coords gcoords, const Dimensions dimensions) {
+__host__ __device__ bool in_physical_domain(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
     const int_t k = gcoords.z;
@@ -328,7 +287,7 @@ __device__ bool in_PML(const Coords gcoords, const Dimensions dimensions) {
     return true;
 }
 
-__device__ Side get_side(const Coords gcoords, const Dimensions dimensions) {
+__host__ __device__ Side get_side(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
     const int_t k = gcoords.z;
@@ -369,9 +328,9 @@ __device__ Coords lcoords_to_gcoords(const Coords lcoords, const Dimensions dime
     }
 }
 
-__device__ Coords gcoords_to_lcoords(const Coords gcoords,
-                                     const Dimensions dimensions,
-                                     const Side side) {
+__host__ __device__ Coords gcoords_to_lcoords(const Coords gcoords,
+                                              const Dimensions dimensions,
+                                              const Side side) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
     const int_t k = gcoords.z;
@@ -451,9 +410,9 @@ __device__ real_t get_sigma(const Coords gcoords,
     return SIGMA;
 }
 
-__device__ int_t lcoords_to_index(const Coords lcoords,
-                                  const Dimensions dimensions,
-                                  const Side side) {
+__host__ __device__ int_t lcoords_to_index(const Coords lcoords,
+                                           const Dimensions dimensions,
+                                           const Side side) {
     const int_t i = lcoords.x;
     const int_t j = lcoords.y;
     const int_t k = lcoords.z;
@@ -467,9 +426,9 @@ __device__ int_t lcoords_to_index(const Coords lcoords,
         case BOTTOM:
             return i * (Ny + padding) * padding + j * padding + k;
         case SIDE:
-            return i * ((Ny + padding) * Nz) + j * Nz + k;
+            return i * (Ny + padding) * Nz + j * Nz + k;
         case FRONT:
-            return i * (padding * Nz) + j * Nz + k;
+            return i * padding * Nz + j * Nz + k;
     }
 }
 
@@ -648,6 +607,171 @@ __global__ void gauss_seidel_black(real_t *const U,
             gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
 }
 
+void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
+    static int_t iter = 0;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const int_t size = get_domain_size(dimensions);
+    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
+    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer, sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+
+    char filename[256];
+    sprintf(filename, "wave_data/%.5d.dat", iter);
+    FILE *const out = fopen(filename, "w");
+    if(!out) {
+        fprintf(stderr, "Could not open file '%s'!\n", filename);
+        exit(EXIT_FAILURE);
+    }
+
+    const int_t k = Nz / 2;
+    for(int j = 0; j < Ny + padding; j++) {
+        int i;
+        for(i = 0; i < Nx + padding - 1; i++) {
+            const Coords gcoords = { .x = i, .y = j, .z = k };
+            const int w =
+                fprintf(out, "%.16lf ", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
+            if(w < 0)
+                printf("could not write all\n");
+        }
+        const Coords gcoords = { .x = i, .y = j, .z = k };
+        const int w = fprintf(out, "%.16lf\n", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
+        if(w < 0)
+            printf("could not write all\n");
+    }
+
+    free(h_buffer);
+    fclose(out);
+    iter++;
+}
+
+void Phi_save(const PML_variable d_buffer, const Dimensions dimensions) {
+    static int_t iter = 0;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    for(Component component = X; component < N_COMPONENTS; component++) {
+        real_t *h_buffer[N_SIDES];
+        for(Side side = BOTTOM; side < N_SIDES; side++) {
+            const int_t size = get_side_size(dimensions, side);
+            h_buffer[side] = (real_t *) malloc(sizeof(real_t) * size);
+            cudaErrorCheck(cudaMemcpy(h_buffer[side],
+                                      d_buffer.var[component].buf[side],
+                                      sizeof(real_t) * size,
+                                      cudaMemcpyDeviceToHost));
+        }
+
+        char filename[256];
+        sprintf(filename, "side_data/phi_%d_%.5d.dat", component, iter);
+        FILE *const out = fopen(filename, "w");
+        if(!out) {
+            fprintf(stderr, "Could not open file '%s'!\n", filename);
+            exit(EXIT_FAILURE);
+        }
+
+        const int_t k = Nz / 2;
+        for(int j = 0; j < Ny + padding; j++) {
+            int i;
+            for(i = 0; i < Nx + padding - 1; i++) {
+                real_t value = 0.0;
+                const Coords gcoords = { .x = i, .y = j, .z = k };
+                if(!in_physical_domain(gcoords, dimensions)) {
+                    const Side side = get_side(gcoords, dimensions);
+                    const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
+                    value = h_buffer[side][lcoords_to_index(lcoords, dimensions, side)];
+                }
+                const int w = fprintf(out, "%.16lf ", value);
+                if(w < 0)
+                    printf("could not write all\n");
+            }
+            real_t value = 0.0;
+            const Coords gcoords = { .x = i, .y = j, .z = k };
+            if(!in_physical_domain(gcoords, dimensions)) {
+                const Side side = get_side(gcoords, dimensions);
+                const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
+                value = h_buffer[side][lcoords_to_index(lcoords, dimensions, side)];
+            }
+            const int w = fprintf(out, "%.16lf\n", value);
+            if(w < 0)
+                printf("could not write all\n");
+        }
+
+        for(Side side = BOTTOM; side < N_SIDES; side++) {
+            free(h_buffer[side]);
+        }
+        fclose(out);
+    }
+    iter++;
+}
+
+void Psi_save(const PML_variable d_buffer, const Dimensions dimensions) {
+    static int_t iter = 0;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    for(Component component = X; component < N_COMPONENTS; component++) {
+        real_t *h_buffer[N_SIDES];
+        for(Side side = BOTTOM; side < N_SIDES; side++) {
+            const int_t size = get_side_size(dimensions, side);
+            h_buffer[side] = (real_t *) malloc(sizeof(real_t) * size);
+            cudaErrorCheck(cudaMemcpy(h_buffer[side],
+                                      d_buffer.var[component].buf[side],
+                                      sizeof(real_t) * size,
+                                      cudaMemcpyDeviceToHost));
+        }
+
+        char filename[256];
+        sprintf(filename, "side_data/psi_%d_%.5d.dat", component, iter);
+        FILE *const out = fopen(filename, "w");
+        if(!out) {
+            fprintf(stderr, "Could not open file '%s'!\n", filename);
+            exit(EXIT_FAILURE);
+        }
+
+        const int_t k = Nz / 2;
+        for(int j = 0; j < Ny + padding; j++) {
+            int i;
+            for(i = 0; i < Nx + padding - 1; i++) {
+                real_t value = 0.0;
+                const Coords gcoords = { .x = i, .y = j, .z = k };
+                if(!in_physical_domain(gcoords, dimensions)) {
+                    const Side side = get_side(gcoords, dimensions);
+                    const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
+                    value = h_buffer[side][lcoords_to_index(lcoords, dimensions, side)];
+                }
+                const int w = fprintf(out, "%.16lf ", value);
+                if(w < 0)
+                    printf("could not write all\n");
+            }
+            real_t value = 0.0;
+            const Coords gcoords = { .x = i, .y = j, .z = k };
+            if(!in_physical_domain(gcoords, dimensions)) {
+                const Side side = get_side(gcoords, dimensions);
+                const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
+                value = h_buffer[side][lcoords_to_index(lcoords, dimensions, side)];
+            }
+            const int w = fprintf(out, "%.16lf\n", value);
+            if(w < 0)
+                printf("could not write all\n");
+        }
+
+        for(Side side = BOTTOM; side < N_SIDES; side++) {
+            free(h_buffer[side]);
+        }
+        fclose(out);
+    }
+    iter++;
+}
+
 extern "C" int simulate_wave(const simulation_parameters p) {
     const real_t dt = p.dt;
     const int_t max_iteration = p.max_iter;
@@ -688,6 +812,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();
             domain_save(U, dimensions);
+            Phi_save(Phi, dimensions);
+            Psi_save(Psi, dimensions);
         }
 
         int block_x = 8;
