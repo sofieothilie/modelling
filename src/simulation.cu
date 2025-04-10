@@ -432,11 +432,59 @@ __host__ __device__ int_t lcoords_to_index(const Coords lcoords,
     }
 }
 
-__device__ real_t get_PML_var(const PML_variable_XYZ var,
+__device__ Coords psi_buffer_shift(const Coords gcoords,
+                                   const Dimensions dimensions,
+                                   const Component component) {
+    const int_t i = gcoords.x;
+    const int_t j = gcoords.y;
+    const int_t k = gcoords.z;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const int_t shift = -1;
+    switch(component) {
+        case X:
+            return Coords { per(i + shift, Nx + padding), j, k };
+        case Y:
+            return Coords { i, per(j + shift, Ny + padding), k };
+        case Z:
+            return Coords { i, j, per(k + shift, Nz + padding) };
+    }
+}
+
+#define tau(coords, shift) (tau_shift(coords, shift, component))
+#define psi_shift(gcoords) (psi_buffer_shift(gcoords, dimensions, component))
+#define K(gcoords) (get_K(gcoords, dimensions))
+#define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
+#define Psi(gcoords) (get_PML_var(U, Psi.var[component], psi_shift(gcoords), component, dimensions))
+#define Psi_prev(gcoords)                                                                          \
+    (get_PML_var(U, Psi_prev.var[component], psi_shift(gcoords), component, dimensions))
+#define Phi(gcoords) (get_PML_var(U, Phi.var[component], gcoords, component, dimensions))
+#define Phi_prev(gcoords) (get_PML_var(U, Phi_prev.var[component], gcoords, component, dimensions))
+#define set_Psi(gcoords, value)                                                                    \
+    (set_PML_var(Psi.var[component], value, psi_shift(gcoords), dimensions))
+#define set_Phi(gcoords, value) (set_PML_var(Phi.var[component], value, gcoords, dimensions))
+
+__device__ real_t get_PML_var(const real_t *const U,
+                              const PML_variable_XYZ var,
                               const Coords gcoords,
+                              const Component component,
                               const Dimensions dimensions) {
-    if(!in_PML(gcoords, dimensions))
+    if(!in_PML(gcoords, dimensions)) {
+        // printf("Not in PML %d/%d %d/%d %d/%d\n",
+        //        gcoords.x,
+        //        dimensions.Nx + dimensions.padding,
+        //        gcoords.y,
+        //        dimensions.Nx + dimensions.padding,
+        //        gcoords.z,
+        //        dimensions.Nx + dimensions.padding);
         return 0.0;
+        const real_t dh = dimensions.dh[component];
+        return -(U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh);
+    }
 
     const Side side = get_side(gcoords, dimensions);
     const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
@@ -456,16 +504,6 @@ __device__ void set_PML_var(const PML_variable_XYZ var,
 
     var.buf[side][lcoords_to_index(lcoords, dimensions, side)] = value;
 }
-
-#define tau(coords, shift) (tau_shift(coords, shift, component))
-#define K(gcoords) (get_K(gcoords, dimensions))
-#define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
-#define Psi(gcoords) (get_PML_var(Psi.var[component], gcoords, dimensions))
-#define Psi_prev(gcoords) (get_PML_var(Psi_prev.var[component], gcoords, dimensions))
-#define Phi(gcoords) (get_PML_var(Phi.var[component], gcoords, dimensions))
-#define Phi_prev(gcoords) (get_PML_var(Phi_prev.var[component], gcoords, dimensions))
-#define set_Psi(gcoords, value) (set_PML_var(Psi.var[component], value, gcoords, dimensions))
-#define set_Phi(gcoords, value) (set_PML_var(Phi.var[component], value, gcoords, dimensions))
 
 void move_buffer_window(real_t **const U, real_t **const U_prev, real_t **const U_prev_prev) {
     real_t *const temp = *U_prev_prev;
@@ -524,7 +562,7 @@ __device__ real_t gauss_seidel(const real_t *const U,
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
-        if(!in_physical_domain(gcoords, dimensions)) {
+        if(in_PML(gcoords, dimensions)) {
             PML += K(gcoords) * K(gcoords)
                  * (sigma(gcoords) * Psi(tau(gcoords, +1))
                     - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
@@ -541,6 +579,38 @@ __device__ real_t gauss_seidel(const real_t *const U,
                  - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
                  + Psi_prev(gcoords) / dt)
                 / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
+            // printf("Psi(%d, %d, %d)[%lf]:"
+            //        " Psi(%d, %d, %d)[%lf]"
+            //        " sigma(%d, %d, %d)[%lf]"
+            //        " K(%d, %d, %d)[%lf]"
+            //        " U(%d, %d, %d)[%lf]"
+            //        " U(%d, %d, %d)[%lf]"
+            //        "\tcomponent: %d\n",
+            //        tau(gcoords, -1).x,
+            //        tau(gcoords, -1).y,
+            //        tau(gcoords, -1).z,
+            //        psi_value,
+            //        tau(tau(gcoords, +1), -1).x,
+            //        tau(tau(gcoords, +1), -1).y,
+            //        tau(tau(gcoords, +1), -1).z,
+            //        Psi(tau(gcoords, +1)),
+            //        gcoords.x,
+            //        gcoords.y,
+            //        gcoords.z,
+            //        sigma(gcoords),
+            //        gcoords.x,
+            //        gcoords.y,
+            //        gcoords.z,
+            //        K(gcoords),
+            //        tau(gcoords, +1).x,
+            //        tau(gcoords, +1).y,
+            //        tau(gcoords, +1).z,
+            //        U(tau(gcoords, +1)),
+            //        tau(gcoords, -1).x,
+            //        tau(gcoords, -1).y,
+            //        tau(gcoords, -1).z,
+            //        U(tau(gcoords, -1)),
+            //        component);
 
             set_Phi(gcoords, phi_value);
             set_Psi(gcoords, psi_value);
