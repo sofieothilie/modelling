@@ -385,6 +385,88 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     return WATER_K;
 }
 
+void Phi_save(const PML_variable d_buffer, const Dimensions dimensions) {
+    static int_t iter = 0;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const int_t size = get_domain_size(dimensions);
+    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
+    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer.buf[X], sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+
+    char filename[256];
+    sprintf(filename, "pml_data/phi_%.5d.dat", iter);
+    FILE *const out = fopen(filename, "w");
+    if(!out) {
+        fprintf(stderr, "Could not open file '%s'!\n", filename);
+        exit(EXIT_FAILURE);
+    }
+
+    const int_t k = Nz / 2;
+    for(int j = 0; j < Ny + padding; j++) {
+        int i;
+        for(i = 0; i < Nx + padding - 1; i++) {
+            const Coords gcoords = { .x = i, .y = j, .z = k };
+            const int w =
+                fprintf(out, "%.16lf ", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
+            if(w < 0)
+                printf("could not write all\n");
+        }
+        const Coords gcoords = { .x = i, .y = j, .z = k };
+        const int w = fprintf(out, "%.16lf\n", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
+        if(w < 0)
+            printf("could not write all\n");
+    }
+
+    free(h_buffer);
+    fclose(out);
+    iter++;
+}
+
+void Psi_save(const PML_variable d_buffer, const Dimensions dimensions) {
+    static int_t iter = 0;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const int_t size = get_domain_size(dimensions);
+    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
+    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer.buf[X], sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+
+    char filename[256];
+    sprintf(filename, "pml_data/psi_%.5d.dat", iter);
+    FILE *const out = fopen(filename, "w");
+    if(!out) {
+        fprintf(stderr, "Could not open file '%s'!\n", filename);
+        exit(EXIT_FAILURE);
+    }
+
+    const int_t k = Nz / 2;
+    for(int j = 0; j < Ny + padding; j++) {
+        int i;
+        for(i = 0; i < Nx + padding - 1; i++) {
+            const Coords gcoords = { .x = i, .y = j, .z = k };
+            const int w =
+                fprintf(out, "%.16lf ", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
+            if(w < 0)
+                printf("could not write all\n");
+        }
+        const Coords gcoords = { .x = i, .y = j, .z = k };
+        const int w = fprintf(out, "%.16lf\n", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
+        if(w < 0)
+            printf("could not write all\n");
+    }
+
+    free(h_buffer);
+    fclose(out);
+    iter++;
+}
+
 __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
@@ -398,7 +480,7 @@ __device__ real_t get_sigma(const Coords gcoords,
     const int_t j = per(gcoords.y, Ny + padding);
     const int_t k = per(gcoords.z, Nz + padding);
 
-    const real_t SIGMA = 0.005;
+    const real_t SIGMA = 1.0;
 
     if(in_physical_domain(gcoords, dimensions))
         return 0.0;
@@ -734,8 +816,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();
             domain_save(U, dimensions);
-            // Phi_save(Phi, dimensions);
-            // Psi_save(Psi, dimensions);
+            Phi_save(Phi, dimensions);
+            Psi_save(Psi, dimensions);
         }
 
         int block_x = 4;
