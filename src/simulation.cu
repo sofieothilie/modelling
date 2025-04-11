@@ -444,7 +444,7 @@ __device__ Coords psi_buffer_shift(const Coords gcoords,
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    const int_t shift = -1;
+    const int_t shift = +1;
     switch(component) {
         case X:
             return Coords { per(i + shift, Nx + padding), j, k };
@@ -498,6 +498,7 @@ __device__ void set_PML_var(const PML_variable_XYZ var,
                             const Dimensions dimensions) {
     if(!in_PML(gcoords, dimensions))
         return;
+
 
     const Side side = get_side(gcoords, dimensions);
     const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
@@ -562,9 +563,12 @@ __device__ real_t gauss_seidel(const real_t *const U,
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
+
         if(in_PML(gcoords, dimensions)) {
+            const Coords psi_coords = psi_shift(gcoords);
+
             PML += K(gcoords) * K(gcoords)
-                 * (sigma(gcoords) * Psi(tau(gcoords, +1))
+                 * (sigma(gcoords) * Psi(tau(psi_coords, +1))
                     - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
                  / (dh * dh);
 
@@ -574,11 +578,12 @@ __device__ real_t gauss_seidel(const real_t *const U,
                  + Phi_prev(gcoords) / dt)
                 / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
 
+
             const real_t psi_value =
-                (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
-                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-                 + Psi_prev(gcoords) / dt)
-                / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
+                (-Psi(tau(psi_coords, +1)) * sigma(psi_coords) * K(psi_coords) / (2.0 * dh)
+                 - (U(tau(psi_coords, +1)) - U(tau(psi_coords, -1))) * K(psi_coords) / (2.0 * dh)
+                 + Psi_prev(psi_coords) / dt)
+                / ((1.0 / dt) + (sigma(tau(psi_coords, -1)) / (2.0 * dh)));
             // printf("Psi(%d, %d, %d)[%lf]:"
             //        " Psi(%d, %d, %d)[%lf]"
             //        " sigma(%d, %d, %d)[%lf]"
@@ -613,7 +618,7 @@ __device__ real_t gauss_seidel(const real_t *const U,
             //        component);
 
             set_Phi(gcoords, phi_value);
-            set_Psi(gcoords, psi_value);
+            set_Psi(psi_coords, psi_value);
         }
 
         result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
@@ -882,11 +887,11 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();
             domain_save(U, dimensions);
-            Phi_save(Phi, dimensions);
-            Psi_save(Psi, dimensions);
+            // Phi_save(Phi, dimensions);
+            // Psi_save(Psi, dimensions);
         }
 
-        int block_x = 8;
+        int block_x = 4;
         int block_y = 8;
         int block_z = 8;
         dim3 block(block_x, block_y, block_z);
@@ -896,7 +901,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
         emit_source<<<grid, block>>>(U_prev, dimensions, iteration * dt);
 
-        for(size_t iter = 0; iter < 5; iter++) {
+        for(size_t iter = 0; iter < 50; iter++) {
             gauss_seidel_red<<<grid, block>>>(U,
                                               U_prev,
                                               U_prev_prev,
