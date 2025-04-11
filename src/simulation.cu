@@ -194,8 +194,8 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
 
-    const Coords gcoords = { 4 * Nx / 5, 4 * Ny / 5, Nz / 2 };
-    const double freq = 1.0e6; // 1MHz
+    const Coords gcoords = { 7*Nx / 8, Ny / 2, Nz / 2 };
+    const double freq = 1.0e3; // 1MHz
     if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
         if(t * freq < 1.0) {
             U(gcoords) = sin(2 * M_PI * t * freq);
@@ -382,6 +382,8 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_K = 1500.0;
     const real_t PLASTIC_K = 2270.0;
 
+    return 1.0;
+
     return WATER_K;
 
     if(i < Nx / 2 && i > Nx / 6)
@@ -403,7 +405,7 @@ __device__ real_t get_sigma(const Coords gcoords,
     const int_t j = per(gcoords.y, Ny + padding);
     const int_t k = per(gcoords.z, Nz + padding);
 
-    const real_t SIGMA = 2.0;
+    const real_t SIGMA = 10.0;
 
     if(in_physical_domain(gcoords, dimensions))
         return 0.0;
@@ -456,54 +458,32 @@ __device__ Coords psi_buffer_shift(const Coords gcoords,
 }
 
 #define tau(coords, shift) (tau_shift(coords, shift, component))
-#define psi_shift(gcoords) (psi_buffer_shift(gcoords, dimensions, component))
 #define K(gcoords) (get_K(gcoords, dimensions))
 #define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
-#define Psi(gcoords) (get_PML_var(U, Psi.var[component], psi_shift(gcoords), component, dimensions))
+#define Psi(gcoords) (get_PML_var(U, Psi, gcoords, component, dimensions))
 #define Psi_prev(gcoords)                                                                          \
-    (get_PML_var(U, Psi_prev.var[component], psi_shift(gcoords), component, dimensions))
-#define Phi(gcoords) (get_PML_var(U, Phi.var[component], gcoords, component, dimensions))
-#define Phi_prev(gcoords) (get_PML_var(U, Phi_prev.var[component], gcoords, component, dimensions))
+    (get_PML_var(U, Psi_prev, gcoords, component, dimensions))
+#define Phi(gcoords) (get_PML_var(U, Phi, gcoords, component, dimensions))
+#define Phi_prev(gcoords) (get_PML_var(U, Phi_prev, gcoords, component, dimensions))
 #define set_Psi(gcoords, value)                                                                    \
-    (set_PML_var(Psi.var[component], value, psi_shift(gcoords), dimensions))
-#define set_Phi(gcoords, value) (set_PML_var(Phi.var[component], value, gcoords, dimensions))
+    (set_PML_var(Psi, value, gcoords, dimensions))
+#define set_Phi(gcoords, value) (set_PML_var(Phi, value, gcoords, dimensions))
 
 __device__ real_t get_PML_var(const real_t *const U,
-                              const PML_variable_XYZ var,
+                              const real_t *var,
                               const Coords gcoords,
                               const Component component,
                               const Dimensions dimensions) {
-    if(!in_PML(gcoords, dimensions)) {
-        // printf("Not in PML %d/%d %d/%d %d/%d\n",
-        //        gcoords.x,
-        //        dimensions.Nx + dimensions.padding,
-        //        gcoords.y,
-        //        dimensions.Nx + dimensions.padding,
-        //        gcoords.z,
-        //        dimensions.Nx + dimensions.padding);
-        return 0.0;
-        const real_t dh = dimensions.dh[component];
-        return -(U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh);
-    }
 
-    const Side side = get_side(gcoords, dimensions);
-    const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
-
-    return var.buf[side][lcoords_to_index(lcoords, dimensions, side)];
+    return var[gcoords_to_index(gcoords, dimensions)];
 }
 
-__device__ void set_PML_var(const PML_variable_XYZ var,
+__device__ void set_PML_var(real_t *var,
                             const real_t value,
                             const Coords gcoords,
                             const Dimensions dimensions) {
-    if(!in_PML(gcoords, dimensions))
-        return;
 
-
-    const Side side = get_side(gcoords, dimensions);
-    const Coords lcoords = gcoords_to_lcoords(gcoords, dimensions, side);
-
-    var.buf[side][lcoords_to_index(lcoords, dimensions, side)] = value;
+    var[gcoords_to_index(gcoords, dimensions)] = value;
 }
 
 void move_buffer_window(real_t **const U, real_t **const U_prev, real_t **const U_prev_prev) {
@@ -513,10 +493,10 @@ void move_buffer_window(real_t **const U, real_t **const U_prev, real_t **const 
     *U = temp;
 }
 
-void swap_aux_variables(const PML_variable *u, const PML_variable *v) {
-    const PML_variable *const temp = u;
-    u = v;
-    v = temp;
+void swap_aux_variables(real_t **const u, real_t **const v) {
+    real_t *const temp = *u;
+    *u = *v;
+    *v = temp;
 }
 
 __global__ void set_random_values(real_t *const U, const Dimensions dimensions) {
@@ -550,76 +530,76 @@ __device__ bool in_bounds(const Coords gcoords, const Dimensions dimensions) {
 __device__ real_t gauss_seidel(const real_t *const U,
                                const real_t *const U_prev,
                                const real_t *const U_prev_prev,
-                               const PML_variable Psi,
-                               const PML_variable Psi_prev,
-                               const PML_variable Phi,
-                               const PML_variable Phi_prev,
+                                real_t *Psi,
+                               const real_t *Psi_prev,
+                                real_t *Phi,
+                               const real_t *Phi_prev,
                                const Dimensions dimensions,
                                const Coords gcoords) {
     const real_t dt = dimensions.dt;
 
     real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / (dt * dt);
     real_t constants = 1 / (dt * dt);
+
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
 
-        if(in_PML(gcoords, dimensions)) {
-            const Coords psi_coords = psi_shift(gcoords);
+        //update pml
 
-            PML += K(gcoords) * K(gcoords)
-                 * (sigma(gcoords) * Psi(tau(psi_coords, +1))
-                    - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
-                 / (dh * dh);
+        PML += K(gcoords) * K(gcoords)
+                * (sigma(gcoords) * Psi(tau(gcoords, +1))
+                - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
+                / (dh * dh);
 
-            const real_t phi_value =
-                (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
-                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-                 + Phi_prev(gcoords) / dt)
-                / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
+        const real_t phi_value =
+            (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
+                - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                + Phi_prev(gcoords) / dt)
+            / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
 
 
-            const real_t psi_value =
-                (-Psi(tau(psi_coords, +1)) * sigma(psi_coords) * K(psi_coords) / (2.0 * dh)
-                 - (U(tau(psi_coords, +1)) - U(tau(psi_coords, -1))) * K(psi_coords) / (2.0 * dh)
-                 + Psi_prev(psi_coords) / dt)
-                / ((1.0 / dt) + (sigma(tau(psi_coords, -1)) / (2.0 * dh)));
-            // printf("Psi(%d, %d, %d)[%lf]:"
-            //        " Psi(%d, %d, %d)[%lf]"
-            //        " sigma(%d, %d, %d)[%lf]"
-            //        " K(%d, %d, %d)[%lf]"
-            //        " U(%d, %d, %d)[%lf]"
-            //        " U(%d, %d, %d)[%lf]"
-            //        "\tcomponent: %d\n",
-            //        tau(gcoords, -1).x,
-            //        tau(gcoords, -1).y,
-            //        tau(gcoords, -1).z,
-            //        psi_value,
-            //        tau(tau(gcoords, +1), -1).x,
-            //        tau(tau(gcoords, +1), -1).y,
-            //        tau(tau(gcoords, +1), -1).z,
-            //        Psi(tau(gcoords, +1)),
-            //        gcoords.x,
-            //        gcoords.y,
-            //        gcoords.z,
-            //        sigma(gcoords),
-            //        gcoords.x,
-            //        gcoords.y,
-            //        gcoords.z,
-            //        K(gcoords),
-            //        tau(gcoords, +1).x,
-            //        tau(gcoords, +1).y,
-            //        tau(gcoords, +1).z,
-            //        U(tau(gcoords, +1)),
-            //        tau(gcoords, -1).x,
-            //        tau(gcoords, -1).y,
-            //        tau(gcoords, -1).z,
-            //        U(tau(gcoords, -1)),
-            //        component);
+        const real_t psi_value =
+            (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
+                - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                + Psi_prev(gcoords) / dt)
+            / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
+        // printf("Psi(%d, %d, %d)[%lf]:"
+        //        " Psi(%d, %d, %d)[%lf]"
+        //        " sigma(%d, %d, %d)[%lf]"
+        //        " K(%d, %d, %d)[%lf]"
+        //        " U(%d, %d, %d)[%lf]"
+        //        " U(%d, %d, %d)[%lf]"
+        //        "\tcomponent: %d\n",
+        //        tau(gcoords, -1).x,
+        //        tau(gcoords, -1).y,
+        //        tau(gcoords, -1).z,
+        //        psi_value,
+        //        tau(tau(gcoords, +1), -1).x,
+        //        tau(tau(gcoords, +1), -1).y,
+        //        tau(tau(gcoords, +1), -1).z,
+        //        Psi(tau(gcoords, +1)),
+        //        gcoords.x,
+        //        gcoords.y,
+        //        gcoords.z,
+        //        sigma(gcoords),
+        //        gcoords.x,
+        //        gcoords.y,
+        //        gcoords.z,
+        //        K(gcoords),
+        //        tau(gcoords, +1).x,
+        //        tau(gcoords, +1).y,
+        //        tau(gcoords, +1).z,
+        //        U(tau(gcoords, +1)),
+        //        tau(gcoords, -1).x,
+        //        tau(gcoords, -1).y,
+        //        tau(gcoords, -1).z,
+        //        U(tau(gcoords, -1)),
+        //        component);
 
-            set_Phi(gcoords, phi_value);
-            set_Psi(psi_coords, psi_value);
-        }
+        set_Phi(gcoords, phi_value);
+        set_Psi(gcoords, psi_value);
+        
 
         result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
                     * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh)
@@ -643,10 +623,10 @@ __device__ bool is_red(const Coords gcoords) {
 __global__ void gauss_seidel_red(real_t *const U,
                                  const real_t *const U_prev,
                                  const real_t *const U_prev_prev,
-                                 const PML_variable Psi,
-                                 const PML_variable Psi_prev,
-                                 const PML_variable Phi,
-                                 const PML_variable Phi_prev,
+                                  real_t *Psi,
+                                 const real_t *Psi_prev,
+                                  real_t *Phi,
+                                 const real_t *Phi_prev,
                                  const Dimensions dimensions) {
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -664,10 +644,10 @@ __global__ void gauss_seidel_red(real_t *const U,
 __global__ void gauss_seidel_black(real_t *const U,
                                    const real_t *const U_prev,
                                    const real_t *const U_prev_prev,
-                                   const PML_variable Psi,
-                                   const PML_variable Psi_prev,
-                                   const PML_variable Phi,
-                                   const PML_variable Phi_prev,
+                                    real_t *Psi,
+                                   const real_t *Psi_prev,
+                                    real_t *Phi,
+                                   const real_t *Phi_prev,
                                    const Dimensions dimensions) {
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
@@ -873,10 +853,10 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         exit(EXIT_FAILURE);
     }
 
-    PML_variable Psi = allocate_pml_variables(dimensions);
-    PML_variable Phi = allocate_pml_variables(dimensions);
-    PML_variable Psi_prev = allocate_pml_variables(dimensions);
-    PML_variable Phi_prev = allocate_pml_variables(dimensions);
+    real_t *Psi = allocate_domain(dimensions);
+    real_t *Phi = allocate_domain(dimensions);
+    real_t *Psi_prev = allocate_domain(dimensions);
+    real_t *Phi_prev = allocate_domain(dimensions);
 
     real_t *U = allocate_domain(dimensions);
     real_t *U_prev = allocate_domain(dimensions);
@@ -901,7 +881,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
         emit_source<<<grid, block>>>(U_prev, dimensions, iteration * dt);
 
-        for(size_t iter = 0; iter < 50; iter++) {
+        for(size_t iter = 0; iter < 5; iter++) {
             gauss_seidel_red<<<grid, block>>>(U,
                                               U_prev,
                                               U_prev_prev,
@@ -929,10 +909,10 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     free_domain(U_prev);
     free_domain(U_prev_prev);
 
-    free_pml_variables(Psi);
-    free_pml_variables(Phi);
-    free_pml_variables(Psi_prev);
-    free_pml_variables(Phi_prev);
+    free_domain(Psi);
+    free_domain(Phi);
+    free_domain(Psi_prev);
+    free_domain(Phi_prev);
 
     return 0;
 }
