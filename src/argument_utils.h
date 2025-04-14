@@ -1,9 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-
-typedef int32_t int_t;
-typedef double real_t;
+#include "simulation.h"
 
 typedef struct options_struct {
     real_t sim_Lx, sim_Ly, sim_Lz;

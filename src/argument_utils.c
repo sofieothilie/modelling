@@ -6,8 +6,6 @@
 #include <memory.h>
 #include <stdlib.h>
 
-typedef int32_t int_t;
-typedef double real_t;
 
 OPTIONS
 *parse_args ( int argc, char **argv )

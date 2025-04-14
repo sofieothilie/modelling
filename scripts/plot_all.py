@@ -53,7 +53,7 @@ def plot_data_3d(file_path, output_path):
 
 def plot_data_2d(file_path, output_path):
     data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
-    plt.imshow(data, norm=SymLogNorm(linthresh=1e-3, vmin=-1, vmax=1), cmap='seismic')
+    plt.imshow(data, norm=SymLogNorm(linthresh=1e-4, vmin=-1, vmax=1), cmap='seismic')
     plt.colorbar()
     plt.savefig(output_path)
     plt.close()
@@ -74,7 +74,7 @@ def plot_data_1d(file_path, output_path):
     ax.plot(slice_data, color='blue')
 
     # Apply symlog scale to the y-axis for symmetric log
-    #ax.set_yscale('symlog', linthresh=1e-4)  # Set the threshold for linear region near 0
+    ax.set_yscale('symlog', linthresh=1e-5)  # Set the threshold for linear region near 0
 
     ax.set_xlabel("X")  # This corresponds to the x-axis (column index)
     ax.set_ylabel("Value")  # This corresponds to the data values
