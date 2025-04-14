@@ -16,11 +16,11 @@ OPTIONS
      * Argument parsing: default parameters
      */
 
-    real_t sim_Lx = 0.001, sim_Ly = 0.001, sim_Lz = 0.001;
-    real_t dt = 1e-8;
+    real_t sim_Lx = 0.01, sim_Ly = 0.01, sim_Lz = 0.01;
+    real_t dt = 1e-5;
     int_t Nx = 100, Ny = 100, Nz = 100;
-    int_t max_iteration = 2000;
-    int_t snapshot_frequency = 20;
+    int_t max_iteration = 500;
+    int_t snapshot_frequency = 1;
 
     static struct option const long_options[] =  {
         {"help",                no_argument,       0, 'h'},

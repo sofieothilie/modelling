@@ -120,7 +120,6 @@ int_t get_domain_size(const Dimensions dimensions) {
     return (Nx + padding) * (Ny + padding) * (Nz + padding);
 }
 
-
 PML_variable allocate_pml_variables(const Dimensions dimensions) {
     real_t *var[N_COMPONENTS] = { NULL };
 
@@ -136,10 +135,9 @@ PML_variable allocate_pml_variables(const Dimensions dimensions) {
 
 void free_pml_variables(PML_variable var) {
     for(Component component = X; component < N_COMPONENTS; component++) {
-        free(var.buf[component]);
+        cudaErrorCheck(cudaFree(var.buf[component]));
     }
 }
-
 
 real_t *allocate_domain(const Dimensions dimensions) {
     real_t *result = NULL;
@@ -158,6 +156,10 @@ void free_domain(real_t *buf) {
 
 __host__ __device__ int_t per(const int_t a, const int_t m) {
     return (a + m) % m;
+}
+
+__host__ __device__ Coords loop_coords(Coords c, Dimensions d) {
+    return { per(c.x, d.Nx + d.padding), per(c.y, d.Ny + d.padding), per(c.z, d.Nz + d.padding) };
 }
 
 __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimensions dimensions) {
@@ -187,7 +189,7 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
 
-    const Coords gcoords = { 6 * Nx / 8, 6* Ny / 8, Nz / 2 };
+    const Coords gcoords = { 4 * Nx / 8, 4 * Ny / 8, Nz / 2 };
     const double freq = 1.0e3; // 1MHz
     if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
         if(t * freq < 1.0) {
@@ -279,6 +281,9 @@ __device__ bool in_PML(const Coords gcoords, const Dimensions dimensions) {
 
     return true;
 }
+__device__ bool in_non_null_PML_region(const Coords gcoords, const Dimensions dimensions) {
+    return in_PML(gcoords, dimensions) || gcoords.x == 0 || gcoords.y == 0 || gcoords.z == 0;
+}
 
 __host__ __device__ Side get_side(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
@@ -347,18 +352,21 @@ __host__ __device__ Coords gcoords_to_lcoords(const Coords gcoords,
     }
 }
 
-__device__ Coords tau_shift(const Coords gcoords, const int_t shift, const Component component) {
+__device__ Coords tau_shift(const Coords gcoords,
+                            const int_t shift,
+                            const Component component,
+                            const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
     const int_t k = gcoords.z;
 
     switch(component) {
         case X:
-            return Coords { i + shift, j, k };
+            return loop_coords({ i + shift, j, k }, dimensions);
         case Y:
-            return Coords { i, j + shift, k };
+            return loop_coords({ i, j + shift, k }, dimensions);
         case Z:
-            return Coords { i, j, k + shift };
+            return loop_coords({ i, j, k + shift }, dimensions);
     }
 }
 
@@ -395,7 +403,8 @@ void Phi_save(const PML_variable d_buffer, const Dimensions dimensions) {
 
     const int_t size = get_domain_size(dimensions);
     real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
-    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer.buf[X], sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+    cudaErrorCheck(
+        cudaMemcpy(h_buffer, d_buffer.buf[X], sizeof(real_t) * size, cudaMemcpyDeviceToHost));
 
     char filename[256];
     sprintf(filename, "pml_data/phi_%.5d.dat", iter);
@@ -436,7 +445,8 @@ void Psi_save(const PML_variable d_buffer, const Dimensions dimensions) {
 
     const int_t size = get_domain_size(dimensions);
     real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
-    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer.buf[X], sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+    cudaErrorCheck(
+        cudaMemcpy(h_buffer, d_buffer.buf[X], sizeof(real_t) * size, cudaMemcpyDeviceToHost));
 
     char filename[256];
     sprintf(filename, "pml_data/psi_%.5d.dat", iter);
@@ -480,11 +490,13 @@ __device__ real_t get_sigma(const Coords gcoords,
     const int_t j = per(gcoords.y, Ny + padding);
     const int_t k = per(gcoords.z, Nz + padding);
 
+    const Coords per_coords = { i, j, k };
+
     const real_t SIGMA = 1.0;
 
-    if(in_physical_domain(gcoords, dimensions))
-        return 0.0;
-    return SIGMA;
+    if(in_PML(per_coords, dimensions))
+        return SIGMA;
+    return 0.0;
 }
 
 __host__ __device__ int_t lcoords_to_index(const Coords lcoords,
@@ -532,7 +544,7 @@ __device__ Coords psi_buffer_shift(const Coords gcoords,
     }
 }
 
-#define tau(coords, shift) (tau_shift(coords, shift, component))
+#define tau(coords, shift) (tau_shift(coords, shift, component, dimensions))
 #define K(gcoords) (get_K(gcoords, dimensions))
 #define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
 #define Psi(gcoords) (get_PML_var(U, Psi, gcoords, component, dimensions))
@@ -548,6 +560,10 @@ __device__ real_t get_PML_var(const real_t *const U,
                               const Component component,
                               const Dimensions dimensions) {
 
+    if(!in_non_null_PML_region(gcoords, dimensions)) {
+        return 0;
+    }
+
     return (var.buf[component])[gcoords_to_index(gcoords, dimensions)];
 }
 
@@ -556,6 +572,11 @@ __device__ void set_PML_var(PML_variable var,
                             const Coords gcoords,
                             const Component component,
                             const Dimensions dimensions) {
+
+    if(!in_non_null_PML_region(gcoords, dimensions)) {
+        printf("SETTING PML VAR AT ILLEGAL PLACE, SHOULD NOT BE CALLED\n");
+        return;
+    }
 
     (var.buf[component])[gcoords_to_index(gcoords, dimensions)] = value;
 }
@@ -567,7 +588,7 @@ void move_buffer_window(real_t **const U, real_t **const U_prev, real_t **const 
     *U = temp;
 }
 
-void swap_aux_variables(PML_variable * u, PML_variable * v) {
+void swap_aux_variables(PML_variable *u, PML_variable *v) {
     PML_variable temp = *u;
     *u = *v;
     *v = temp;
@@ -621,57 +642,64 @@ __device__ real_t gauss_seidel(const real_t *const U,
 
         // update pml
 
-        PML += K(gcoords) * K(gcoords)
-             * (sigma(gcoords) * Psi(tau(gcoords, +1))
-                - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
-             / (dh * dh);
+        if(in_non_null_PML_region(gcoords, dimensions)) {
+            PML += K(gcoords) * K(gcoords)
+                 * (sigma(gcoords) * Psi(tau(gcoords, +1))
+                    - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
+                 / (dh * dh);
 
-        const real_t phi_value =
-            (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
-             - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-             + Phi_prev(gcoords) / dt)
-            / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
+            const real_t phi_value =
+                (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                 + Phi_prev(gcoords) / dt)
+                / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
 
-        const real_t psi_value =
-            (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
-             - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-             + Psi_prev(gcoords) / dt)
-            / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
-        // printf("Psi(%d, %d, %d)[%lf]:"
-        //        " Psi(%d, %d, %d)[%lf]"
-        //        " sigma(%d, %d, %d)[%lf]"
-        //        " K(%d, %d, %d)[%lf]"
-        //        " U(%d, %d, %d)[%lf]"
-        //        " U(%d, %d, %d)[%lf]"
-        //        "\tcomponent: %d\n",
-        //        tau(gcoords, -1).x,
-        //        tau(gcoords, -1).y,
-        //        tau(gcoords, -1).z,
-        //        psi_value,
-        //        tau(tau(gcoords, +1), -1).x,
-        //        tau(tau(gcoords, +1), -1).y,
-        //        tau(tau(gcoords, +1), -1).z,
-        //        Psi(tau(gcoords, +1)),
-        //        gcoords.x,
-        //        gcoords.y,
-        //        gcoords.z,
-        //        sigma(gcoords),
-        //        gcoords.x,
-        //        gcoords.y,
-        //        gcoords.z,
-        //        K(gcoords),
-        //        tau(gcoords, +1).x,
-        //        tau(gcoords, +1).y,
-        //        tau(gcoords, +1).z,
-        //        U(tau(gcoords, +1)),
-        //        tau(gcoords, -1).x,
-        //        tau(gcoords, -1).y,
-        //        tau(gcoords, -1).z,
-        //        U(tau(gcoords, -1)),
-        //        component);
+            const real_t psi_value =
+                (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                 + Psi_prev(gcoords) / dt)
+                / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
+            // printf("Psi(%d, %d, %d)[%lf]:"
+            //        " Psi(%d, %d, %d)[%lf]"
+            //        " sigma(%d, %d, %d)[%lf]"
+            //        " K(%d, %d, %d)[%lf]"
+            //        " U(%d, %d, %d)[%lf]"
+            //        " U(%d, %d, %d)[%lf]"
+            //        "\tcomponent: %d\n",
+            //        tau(gcoords, -1).x,
+            //        tau(gcoords, -1).y,
+            //        tau(gcoords, -1).z,
+            //        psi_value,
+            //        tau(tau(gcoords, +1), -1).x,
+            //        tau(tau(gcoords, +1), -1).y,
+            //        tau(tau(gcoords, +1), -1).z,
+            //        Psi(tau(gcoords, +1)),
+            //        gcoords.x,
+            //        gcoords.y,
+            //        gcoords.z,
+            //        sigma(gcoords),
+            //        gcoords.x,
+            //        gcoords.y,
+            //        gcoords.z,
+            //        K(gcoords),
+            //        tau(gcoords, +1).x,
+            //        tau(gcoords, +1).y,
+            //        tau(gcoords, +1).z,
+            //        U(tau(gcoords, +1)),
+            //        tau(gcoords, -1).x,
+            //        tau(gcoords, -1).y,
+            //        tau(gcoords, -1).z,
+            //        U(tau(gcoords, -1)),
+            //        component);
 
-        set_Phi(gcoords, phi_value);
-        set_Psi(gcoords, psi_value);
+            set_Phi(gcoords, phi_value);
+            set_Psi(gcoords, psi_value);
+        }
+        // if(PML != 0 && gcoords.x < 101 && gcoords.y == dimensions.Ny / 2
+        //    && gcoords.z == dimensions.Nz / 2) {
+        //     printf("coords: %d,%d,%d, component %d\n", gcoords.x, gcoords.y, gcoords.z,
+        //     component);
+        // }
 
         result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
                     * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh)
@@ -775,7 +803,6 @@ void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
     iter++;
 }
 
-
 extern "C" int simulate_wave(const simulation_parameters p) {
     const real_t dt = p.dt;
     const int_t max_iteration = p.max_iter;
@@ -816,8 +843,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();
             domain_save(U, dimensions);
-            Phi_save(Phi, dimensions);
-            Psi_save(Psi, dimensions);
+            // Phi_save(Phi, dimensions);
+            // Psi_save(Psi, dimensions);
         }
 
         int block_x = 4;
