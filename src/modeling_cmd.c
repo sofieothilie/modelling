@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
 
     fclose(model_file); // data is safe in array, we don't need the file anymore
 
-    simulation_parameters p = { .model_data = model,
+    simulation_parameters p = {
         .dimensions = {
             .Nx = options->Nx,
             .Ny = options->Ny,
