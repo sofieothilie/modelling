@@ -154,15 +154,6 @@ void free_domain(real_t *buf) {
     cudaErrorCheck(cudaFree(buf));
 }
 
-// __host__ __device__ int_t per(const int_t a, const int_t m) {
-//     return (a + m) % m;
-// }
-
-// __host__ __device__ Coords loop_coords(Coords c, Dimensions d) {
-//     return { per(c.x, d.Nx + d.padding), per(c.y, d.Ny + d.padding), per(c.z, d.Nz + d.padding)
-//     };
-// }
-
 __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
@@ -202,16 +193,7 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     }
 }
 
-// place 0,0 at beginning of physical world (after PML)
-__device__ __host__ Coords physical_coords(Coords gcoords,
-                                           Dimensions dimensions) { // I'm not sure this is useful
 
-    int_t x = gcoords.x - dimensions.padding;
-    int_t y = gcoords.y - dimensions.padding;
-    int_t z = gcoords.z - dimensions.padding;
-
-    Coords pcoords = Coords { x, y, z };
-}
 
 dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
     const int_t Nx = dimensions.Nx;
@@ -238,24 +220,6 @@ dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
     }
 }
 
-__host__ __device__ bool in_physical_domain(const Coords gcoords, const Dimensions dimensions) {
-    const int_t i = gcoords.x - dimensions.padding;
-    const int_t j = gcoords.y - dimensions.padding;
-    const int_t k = gcoords.z - dimensions.padding;
-
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
-
-    if(i < 0 || j < 0 || k < 0)
-        return false;
-
-    if(i < Nx && j < Ny && k < Nz)
-        return true;
-
-    return false;
-}
-
 __device__ bool out_of_bounds(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
@@ -275,7 +239,7 @@ __device__ bool out_of_bounds(const Coords gcoords, const Dimensions dimensions)
     return false;
 }
 
-__device__ bool in_padding(const Coords gcoords, const Dimensions dimensions) {
+__device__ bool in_PML(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
     const int_t k = gcoords.z;
@@ -301,23 +265,6 @@ __device__ bool in_padding(const Coords gcoords, const Dimensions dimensions) {
     return true;
 }
 
-// one cell inside padding. where the pml is computed
-__device__ bool in_PML(const Coords gcoords, const Dimensions dimensions) {
-
-    // I also want a 1 cell thin shell around my pml for the psi. it might also be necessary for the
-    // outer part of the pml as if the padding was one cell thinner, and the simulation 2 times
-    // bigger
-
-    // this was a bit creative, hope its doing it correctly
-
-    Dimensions adjusted_dim = dimensions;
-    adjusted_dim.Nx += 2;
-    adjusted_dim.Ny += 2;
-    adjusted_dim.Nz += 2;
-    adjusted_dim.padding -= 1;
-
-    return in_padding(gcoords, adjusted_dim);
-}
 
 // __device__ bool in_non_null_PML_region(const Coords gcoords, const Dimensions dimensions) {
 //     return in_PML(gcoords, dimensions) || gcoords.x == 0 || gcoords.y == 0 || gcoords.z == 0;
@@ -365,31 +312,31 @@ __device__ bool in_PML(const Coords gcoords, const Dimensions dimensions) {
 //     }
 // }
 
-__host__ __device__ Coords gcoords_to_lcoords(const Coords gcoords,
-                                              const Dimensions dimensions,
-                                              const Side side) {
-    const int_t i = gcoords.x;
-    const int_t j = gcoords.y;
-    const int_t k = gcoords.z;
+// __host__ __device__ Coords gcoords_to_lcoords(const Coords gcoords,
+//                                               const Dimensions dimensions,
+//                                               const Side side) {
+//     const int_t i = gcoords.x;
+//     const int_t j = gcoords.y;
+//     const int_t k = gcoords.z;
 
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
-    const int_t padding = dimensions.padding;
+//     const int_t Nx = dimensions.Nx;
+//     const int_t Ny = dimensions.Ny;
+//     const int_t Nz = dimensions.Nz;
+//     const int_t padding = dimensions.padding;
 
-    if(in_physical_domain(gcoords, dimensions)) {
-        printf("Called gcoords_to_lcoords from phisical domain (%d, %d, %d)\n", i, j, k);
-    }
+//     // if(in_physical_domain(gcoords, dimensions)) {
+//     //     printf("Called gcoords_to_lcoords from phisical domain (%d, %d, %d)\n", i, j, k);
+//     // }
 
-    switch(side) {
-        case BOTTOM:
-            return { .x = i, .y = j, .z = k - Nz };
-        case SIDE:
-            return { .x = i - Nx, .y = j, .z = k };
-        case FRONT:
-            return { .x = i, .y = j - Ny, .z = k };
-    }
-}
+//     switch(side) {
+//         case BOTTOM:
+//             return { .x = i, .y = j, .z = k - Nz };
+//         case SIDE:
+//             return { .x = i - Nx, .y = j, .z = k };
+//         case FRONT:
+//             return { .x = i, .y = j - Ny, .z = k };
+//     }
+// }
 
 __device__ Coords tau_shift(const Coords gcoords,
                             const int_t shift,
@@ -522,9 +469,13 @@ __device__ real_t get_sigma(const Coords gcoords,
 
     const real_t SIGMA = 1.0;
 
-    // Coords adjusted_coords = {gcoords.x - 1, gcoords.y - 1, gcoords.z - 1};
+    Dimensions adjusted_dim = dimensions;
+    adjusted_dim.Nx += 2;
+    adjusted_dim.Ny += 2;
+    adjusted_dim.Nz += 2;
+    adjusted_dim.padding -= 1;
 
-    if(in_PML(gcoords, dimensions))
+    if(in_PML(gcoords, adjusted_dim))
         return SIGMA;
 
     return 0.0;
@@ -642,65 +593,29 @@ __device__ real_t gauss_seidel(const real_t *const U,
         // update pml
 
         // only do it in applicable part of PML: one step inside the padding
-        if(in_PML(gcoords, dimensions)) {//SOLVE: this is the problematic part. if you remove the if and solve everywhere, it works fine. it should also with the if, but it doesnt
+        // SOLVE: this is the problematic part. if you remove the if and solve everywhere, it works
+        // fine. it should also with the if, but it doesnt
+        if(in_PML(gcoords, dimensions)) {
             PML += K(gcoords) * K(gcoords)
                  * (sigma(gcoords) * Psi(tau(gcoords, +1))
                     - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
                  / (dh * dh);
-        }
 
-        const real_t phi_value =
-            (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
-             - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-             + Phi_prev(gcoords) / dt)
-            / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
+            const real_t psi_value =
+                (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                 + Psi_prev(gcoords) / dt)
+                / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
 
-        const real_t psi_value =
-            (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
-             - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-             + Psi_prev(gcoords) / dt)
-            / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
-        // printf("Psi(%d, %d, %d)[%lf]:"
-        //        " Psi(%d, %d, %d)[%lf]"
-        //        " sigma(%d, %d, %d)[%lf]"
-        //        " K(%d, %d, %d)[%lf]"
-        //        " U(%d, %d, %d)[%lf]"
-        //        " U(%d, %d, %d)[%lf]"
-        //        "\tcomponent: %d\n",
-        //        tau(gcoords, -1).x,
-        //        tau(gcoords, -1).y,
-        //        tau(gcoords, -1).z,
-        //        psi_value,
-        //        tau(tau(gcoords, +1), -1).x,
-        //        tau(tau(gcoords, +1), -1).y,
-        //        tau(tau(gcoords, +1), -1).z,
-        //        Psi(tau(gcoords, +1)),
-        //        gcoords.x,
-        //        gcoords.y,
-        //        gcoords.z,
-        //        sigma(gcoords),
-        //        gcoords.x,
-        //        gcoords.y,
-        //        gcoords.z,
-        //        K(gcoords),
-        //        tau(gcoords, +1).x,
-        //        tau(gcoords, +1).y,
-        //        tau(gcoords, +1).z,
-        //        U(tau(gcoords, +1)),
-        //        tau(gcoords, -1).x,
-        //        tau(gcoords, -1).y,
-        //        tau(gcoords, -1).z,
-        //        U(tau(gcoords, -1)),
-        //        component);
+            const real_t phi_value =
+                (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
+                 + Phi_prev(gcoords) / dt)
+                / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
 
         set_Phi(gcoords, phi_value);
         set_Psi(gcoords, psi_value);
-
-        // if(PML != 0 && gcoords.x < 101 && gcoords.y == dimensions.Ny / 2
-        //    && gcoords.z == dimensions.Nz / 2) {
-        //     printf("coords: %d,%d,%d, component %d\n", gcoords.x, gcoords.y, gcoords.z,
-        //     component);
-        // }
+        }
 
         result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
                     * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh)
@@ -866,7 +781,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
         emit_source<<<grid, block>>>(U_prev, dimensions, iteration * dt);
 
-        for(size_t iter = 0; iter < 5; iter++) {
+        for(size_t iter = 0; iter < 2; iter++) {
             gauss_seidel_red<<<grid, block>>>(U,
                                               U_prev,
                                               U_prev_prev,
