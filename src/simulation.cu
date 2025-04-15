@@ -1,5 +1,8 @@
 #include "simulation.h"
 #include <stdio.h>
+#include <sys/time.h>
+
+#define WALLTIME(t) ((double) (t).tv_sec + 1e-6 * (double) (t).tv_usec)
 
 typedef enum { BOTTOM, TOP, LEFT, RIGHT, FRONT, BACK } Side;
 #define N_SIDES (6)
@@ -269,7 +272,6 @@ __device__ bool in_PML(const Coords gcoords, const Dimensions dimensions) {
     return true;
 }
 
-
 __device__ Coords tau_shift(const Coords gcoords,
                             const int_t shift,
                             const Component component,
@@ -478,11 +480,6 @@ __device__ real_t get_PML_var(const real_t *const U,
     // 3. retrieve index of that lcoord in the side
     int_t index = lcoords_to_index(lcoords, dimensions, side);
 
-    if(index < 0 || index >= get_alloc_side_size(dimensions, side)) {
-        printf("illegal local index at gcoords(%d %d %d)\n", gcoords.x, gcoords.y, gcoords.z);
-        int_t max_idx =  get_alloc_side_size(dimensions, side);
-        lcoords_to_index(lcoords, dimensions, side);
-    }
 
     // 4. finally access the PML variable.
     return (var.dir[component].side[side])[index];
@@ -610,13 +607,13 @@ __device__ real_t gauss_seidel(const real_t *const U,
     return result;
 }
 
-__device__ bool is_red(const Coords gcoords) {
-    const int_t i = gcoords.x;
-    const int_t j = gcoords.y;
-    const int_t k = gcoords.z;
+// __device__ bool is_red(const Coords gcoords) {
+//     const int_t i = gcoords.x;
+//     const int_t j = gcoords.y;
+//     const int_t k = gcoords.z;
 
-    return (i + j + k) % 2 == 1;
-}
+//     return (i + j + k) % 2 == 1;
+// }
 
 __global__ void gauss_seidel_red(real_t *const U,
                                  const real_t *const U_prev,
@@ -629,14 +626,17 @@ __global__ void gauss_seidel_red(real_t *const U,
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-    const Coords gcoords = { .x = i, .y = j, .z = k };
+
+    int_t m = (i + j + 1) % 2;
+    int_t true_k = 2 * k + m;
+
+    const Coords gcoords = { .x = i, .y = j, .z = true_k };
 
     if(!in_bounds(gcoords, dimensions))
         return;
 
-    if(is_red(gcoords))
-        U(gcoords) =
-            gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
+    U(gcoords) =
+        gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
 }
 
 __global__ void gauss_seidel_black(real_t *const U,
@@ -650,14 +650,17 @@ __global__ void gauss_seidel_black(real_t *const U,
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-    const Coords gcoords = { .x = i, .y = j, .z = k };
+
+    int_t m = (i + j) % 2;
+    int_t true_k = 2 * k + m;
+
+    const Coords gcoords = { .x = i, .y = j, .z = true_k };
 
     if(!in_bounds(gcoords, dimensions))
         return;
 
-    if(!is_red(gcoords))
-        U(gcoords) =
-            gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
+    U(gcoords) =
+        gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
 }
 
 void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
@@ -731,6 +734,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
 
+    printf("version 2.0\n");
+
     if(!init_cuda()) {
         fprintf(stderr, "Could not initialize CUDA\n");
         exit(EXIT_FAILURE);
@@ -745,6 +750,10 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     real_t *U_prev = allocate_domain(dimensions);
     real_t *U_prev_prev = allocate_domain(dimensions);
 
+    struct timeval start, end;
+
+    gettimeofday(&start, NULL);
+
     for(int_t iteration = 0; iteration < max_iteration; iteration++) {
         if((iteration % snapshot_freq) == 0) {
             printf("iteration %d/%d\n", iteration, max_iteration);
@@ -754,13 +763,13 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             // Psi_save(Psi, dimensions);
         }
 
-        int block_x = 4;
-        int block_y = 4;
-        int block_z = 4;
+        int block_x = 8;
+        int block_y = 8;
+        int block_z = 8;
         dim3 block(block_x, block_y, block_z);
         dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
                   (Ny + 2 * padding + block_y - 1) / block_y,
-                  (Nz + 2 * padding + block_z - 1) / block_z);
+                  ((Nz + 2 * padding) / 2 + block_z - 1) / block_z);
 
         emit_source<<<grid, block>>>(U_prev, dimensions, iteration * dt);
 
@@ -795,6 +804,12 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         swap_aux_variables(&Psi, &Psi_prev);
         swap_aux_variables(&Phi, &Phi_prev);
     }
+
+    gettimeofday(&end, NULL);
+
+    double diff = WALLTIME(end) - WALLTIME(start);
+
+    printf("time taken: %lf sec, %lf per iteration\n", diff, diff / max_iteration);
 
     free_domain(U);
     free_domain(U_prev);
