@@ -1,5 +1,6 @@
 #include "simulation.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/time.h>
 
 #define WALLTIME(t) ((double) (t).tv_sec + 1e-6 * (double) (t).tv_usec)
@@ -198,24 +199,36 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
 #define U_prev(gcoords) U_prev[gcoords_to_index(gcoords, dimensions)]
 #define U_prev_prev(gcoords) U_prev_prev[gcoords_to_index(gcoords, dimensions)]
 
-__global__ void emit_source(real_t *const U, real_t *const U_prev, const Dimensions dimensions, const real_t t) {
-    // const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    // const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    // const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+__global__ void emit_source(real_t *const U, const Dimensions dimensions, const real_t value) {
+    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    const Coords gcoords = {.x=Nx/2+padding, .y=Ny/2+padding, .z=padding+10};
+    int n_source = 7;
+    int spacing = 2; // spacing in terms of cells, not distance
 
-     const double freq = 1.0e6; // 1MHz
-     {
-        U(gcoords) = sin(2 * M_PI * t * freq);
+    const double freq = 1.0e6; // 1MHz
+
+    // grid of sources over yz plane, at x = 5 maybe
+    for(int n_i = 0; n_i < n_source; n_i++) {
+        for(int n_j = 0; n_j < n_source; n_j++) {
+            int idx_i = padding + Nx / 2 - (n_source / 2 * spacing) + n_i * spacing;
+            int idx_j = padding + Ny / 2 - (n_source / 2 * spacing) + n_j * spacing;
+
+            double shift = 0;
+            (double) n_j / n_source * 2 * M_PI * 0.7;
+            // double sine = sin(2 * M_PI * t * freq - shift);
+
+            const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
+
+            U(gcoords) = value;
+        }
     }
-    
-
 
     // if(t==0) {
     //     real_t delta = sqrt(((i - emit_coords.x) * (i - emit_coords.x))
@@ -226,6 +239,28 @@ __global__ void emit_source(real_t *const U, real_t *const U_prev, const Dimensi
     //                               / (real_t)(0.5 * (Nz + padding * 2)));
     //     U_prev(gcoords) = U(gcoords) = exp(-t*freq*t*freq)*exp(-4.0 * delta * delta);
     // }
+}
+
+void get_recv(const real_t *d_buffer, FILE *output, Dimensions dimensions) {
+    static int_t iter = 0;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const int_t size = get_domain_size(dimensions);
+
+    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
+    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer, sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+
+    Coords dst_coords = { .x = Nx / 2 + padding, .y = Ny / 2 + padding, .z = padding + 10 };
+
+    real_t at_dest = h_buffer[gcoords_to_index(dst_coords, dimensions)];
+
+    fwrite(&at_dest, sizeof(real_t), 1, output);
+
+    free(h_buffer);
 }
 
 // dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
@@ -318,7 +353,7 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
 
     // return WATER_K;
 
-    if(i < padding + Nx / 2)
+    if(k < padding + 5* Nz/6 )
         return WATER_K;
 
     return PLASTIC_K;
@@ -337,10 +372,9 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_RHO = 997.0;
     const real_t PLASTIC_RHO = 1185.0;
 
+    // return 0;
 
-    // return WATER_RHO;
-
-    if(i < padding + Nx / 2)
+    if(k < padding + 5*Nz / 6)
         return WATER_RHO;
 
     return PLASTIC_RHO;
@@ -590,7 +624,7 @@ __device__ real_t gauss_seidel(const real_t *const U,
     real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / (dt * dt);
     real_t constants = 1 / (dt * dt);
 
-#pragma unroll 3 // shouldnt be necessary, redo measurements
+#pragma unroll 3
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
 
@@ -622,13 +656,14 @@ __device__ real_t gauss_seidel(const real_t *const U,
                 real_t result =
             (d_dt * d_dt)
                 * (2 * (-K(i - 1, j, k) / (2 * d_dx) + K(i + 1, j, k) / (2 * d_dx))
-                    * (-d_P(i - 1, j, k) / (2 * d_dx) + d_P(i + 1, j, k) / (2 * d_dx)) * K(i, j, k)
+                    * (-d_P(i - 1, j, k) / (2 * d_dx) + d_P(i + 1, j, k) / (2 * d_dx)) * K(i, j,
+           k)
                 + 2 * (-K(i, j - 1, k) / (2 * d_dy) + K(i, j + 1, k) / (2 * d_dy))
-                        * (-d_P(i, j - 1, k) / (2 * d_dy) + d_P(i, j + 1, k) / (2 * d_dy)) * K(i, j,
-           k)
+                        * (-d_P(i, j - 1, k) / (2 * d_dy) + d_P(i, j + 1, k) / (2 * d_dy)) *
+           K(i, j, k)
                 + 2 * (-K(i, j, k - 1) / (2 * d_dz) + K(i, j, k + 1) / (2 * d_dz))
-                        * (-d_P(i, j, k - 1) / (2 * d_dz) + d_P(i, j, k + 1) / (2 * d_dz)) * K(i, j,
-           k)
+                        * (-d_P(i, j, k - 1) / (2 * d_dz) + d_P(i, j, k + 1) / (2 * d_dz)) *
+           K(i, j, k)
                 + (-2 * d_P(i, j, k) / (d_dx * d_dx) + d_P(i - 1, j, k) / (d_dx * d_dx)
                     + d_P(i + 1, j, k) / (d_dx * d_dx))
                         * (K(i, j, k) * K(i, j, k))
@@ -736,20 +771,17 @@ __global__ void var_density_solver(real_t *const U,
         const real_t dh = dimensions.dh[component];
 
         real_t pml1 = 0.0, pml2 = 0.0;
-        
+
         if(in_PML(gcoords, dimensions)) {
             pml1 = dh * sigma(gcoords) * Psi_prev(tau(+1));
-            pml2 = -dh *sigma(tau(-1)) * Phi_prev(tau(-1));
+            pml2 = -dh * sigma(tau(-1)) * Phi_prev(tau(-1));
         }
 
-
-
-        result +=
-            dt * dt / (dh * dh) * K(gcoords) * K(gcoords) * Rho(gcoords)
-            * (0.5 * (1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords)) * (U_prev(tau(+1)) + pml1 - U_prev(gcoords))
-               - 0.5 * (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
-                     * (U_prev(gcoords) - U_prev(tau(-1)) - pml2));
-
+        result += dt * dt / (dh * dh) * K(gcoords) * K(gcoords) * Rho(gcoords)
+                * (0.5 * (1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords))
+                       * (U_prev(tau(+1)) + pml1 - U_prev(gcoords))
+                   - 0.5 * (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
+                         * (U_prev(gcoords) - U_prev(tau(-1)) - pml2));
     }
     U(gcoords) = result;
 }
@@ -815,10 +847,9 @@ void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
     }
 
     const int_t j = Ny / 2 + padding;
-    for(int i = 0; i < Nx + 2 * padding - 1; i++) {
-        int k;
-        for(k = 0; k < Nz + 2 * padding; k++) {
-
+    for(int k = 0; k < Nz + 2 * padding; k++) {
+        int i;
+        for(i = 0; i < Nx + 2 * padding - 1; i++) {
             const Coords gcoords = { .x = i, .y = j, .z = k };
             const int w =
                 fprintf(out, "%.16lf ", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
@@ -843,6 +874,55 @@ __global__ void show_sigma(Dimensions dimensions, real_t *U, real_t *U_prev) {
     const Coords gcoords = { .x = i, .y = j, .z = k };
 
     U(gcoords) = U_prev(gcoords) = get_sigma(gcoords, dimensions, X);
+}
+
+int signature(real_t **sig_buf) {
+    FILE *f = fopen("data/signature.dat", "rb");
+    if(!f) {
+        perror("Failed to open file");
+        return -1;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    if(fsize < 0) {
+        perror("ftell failed");
+        fclose(f);
+        return -1;
+    }
+    rewind(f);
+
+    size_t num_doubles = fsize / sizeof(double);
+
+    double *double_buffer = (double *) calloc(num_doubles, sizeof(double));
+    if(!double_buffer) {
+        perror("Failed to allocate double_buffer");
+        fclose(f);
+        return -1;
+    }
+
+    size_t read = fread(double_buffer, sizeof(double), num_doubles, f);
+    fclose(f);
+
+    if(read != num_doubles) {
+        fprintf(stderr, "fread incomplete: expected %zu, got %zu\n", num_doubles, read);
+        free(double_buffer);
+        return -1;
+    }
+
+    *sig_buf = (real_t *) calloc(num_doubles, sizeof(real_t));
+    if(!*sig_buf) {
+        perror("Failed to allocate sig_buf");
+        free(double_buffer);
+        return -1;
+    }
+
+    for(size_t i = 0; i < num_doubles; i++) {
+        (*sig_buf)[i] = (real_t) double_buffer[i];
+    }
+
+    free(double_buffer);
+    return (int) num_doubles;
 }
 
 extern "C" int simulate_wave(const simulation_parameters p) {
@@ -882,6 +962,13 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     real_t *U_prev = allocate_domain(dimensions);
     real_t *U_prev_prev = allocate_domain(dimensions);
 
+    FILE *output_buffer = fopen("sensor_out/dest_wave.dat", "w");
+
+    real_t *sig;
+    int sig_len = signature(&sig);
+
+    printf("sig_len  = %d\n", sig_len);
+
     struct timeval start, end;
 
     gettimeofday(&start, NULL);
@@ -894,6 +981,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             // Phi_save(Phi, dimensions);
             // Psi_save(Psi, dimensions);
         }
+
+        get_recv(U, output_buffer, dimensions);
 
         int block_x = 8;
         int block_y = 8;
@@ -912,16 +1001,29 @@ extern "C" int simulate_wave(const simulation_parameters p) {
                                             Phi_prev,
                                             dimensions);
 
+        real_t src_freq = 1.0e6;
+        real_t src_sampling_rate = 8 * src_freq;
+
+        int signature_idx = (int) (iteration * dt * src_sampling_rate);
+
+        if(signature_idx < sig_len) {
+            real_t src_value = sig[signature_idx];
+            emit_source<<<1, 1>>>(U, dimensions, src_value);
+        }
+
         cudaError_t err = cudaGetLastError();
         if(err != cudaSuccess) {
             printf("cuda kernel error: %s\n", cudaGetErrorString(err));
             exit(EXIT_FAILURE);
         }
 
-        emit_source<<<1,1>>>(U, U_prev, dimensions, iteration * dt);
-
         pml_var_solver<<<grid, block>>>(U_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions);
 
+        err = cudaGetLastError();
+        if(err != cudaSuccess) {
+            printf("cuda kernel error: %s\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
         // show_sigma<<<grid, block>>>(dimensions, U, U_prev);
 
         move_buffer_window(&U, &U_prev, &U_prev_prev);
@@ -929,6 +1031,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         swap_aux_variables(&Phi, &Phi_prev);
     }
     cudaDeviceSynchronize();
+
+    fclose(output_buffer);
 
     gettimeofday(&end, NULL);
 
