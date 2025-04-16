@@ -565,6 +565,7 @@ __device__ real_t gauss_seidel(const real_t *const U,
     real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / (dt * dt);
     real_t constants = 1 / (dt * dt);
 
+    #pragma unroll N_COMPONENTS
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
@@ -606,14 +607,6 @@ __device__ real_t gauss_seidel(const real_t *const U,
     result /= constants;
     return result;
 }
-
-// __device__ bool is_red(const Coords gcoords) {
-//     const int_t i = gcoords.x;
-//     const int_t j = gcoords.y;
-//     const int_t k = gcoords.z;
-
-//     return (i + j + k) % 2 == 1;
-// }
 
 __global__ void gauss_seidel_red(real_t *const U,
                                  const real_t *const U_prev,
@@ -804,6 +797,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         swap_aux_variables(&Psi, &Psi_prev);
         swap_aux_variables(&Phi, &Phi_prev);
     }
+    cudaDeviceSynchronize();
 
     gettimeofday(&end, NULL);
 

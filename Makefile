@@ -18,7 +18,7 @@ movie:
 
 
 
-NVCC_FLAGS = -Xptxas -O3 -use_fast_math  -I./src
+NVCC_FLAGS =  -O3 -I./src
 
 build: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/simulation.cu
 	nvcc $(NVCC_FLAGS) $^ -o  bin/modeling_cmd
