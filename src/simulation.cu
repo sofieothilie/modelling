@@ -206,7 +206,7 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    const Coords gcoords = { 4 * Nx / 8 + padding, 4 * Ny / 8 + padding, Nz / 2 + padding };
+    const Coords gcoords = { 2 * Nx / 8 + padding, 4 * Ny / 8 + padding, Nz / 2 + padding };
     const double freq = 1.0e6; // 1MHz
     if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
         if(t * freq < 1.0) {
@@ -305,12 +305,12 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
 
     // return 1000.0;
 
-    return WATER_K;
+    // return WATER_K;
 
-    if(i < Nx / 2 && i > Nx / 6)
-        return PLASTIC_K;
+    if(i < padding+Nx / 2)
+        return WATER_K;
 
-    return WATER_K;
+    return PLASTIC_K;
 }
 
 __device__ real_t get_sigma(const Coords gcoords,
@@ -574,9 +574,6 @@ __device__ real_t gauss_seidel(const real_t *const U,
 
         // update pml
 
-        // only do it in applicable part of PML: one step inside the padding
-        // SOLVE: this is the problematic part. if you remove the if and solve everywhere, it
-        // works fine. it should also with the if, but it doesnt
         if(in_PML(gcoords, dimensions)) {
             PML += (sigma(gcoords) * Psi(tau(gcoords, +1))
                     - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
@@ -598,10 +595,12 @@ __device__ real_t gauss_seidel(const real_t *const U,
             set_Psi(gcoords, psi_value);
         }
 
-        result += //2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
-                  //  * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh)
+        result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
+                   * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh) / (K*K)
                 + (U(tau(gcoords, +1)) + U(tau(gcoords, -1))) / (dh * dh)
                 + PML;
+
+                
         constants += 2.0 / (dh * dh);
     }
 
