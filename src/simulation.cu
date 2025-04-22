@@ -207,7 +207,7 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t padding = dimensions.padding;
 
     const Coords gcoords = { 4 * Nx / 8 + padding, 4 * Ny / 8 + padding, Nz / 2 + padding };
-    const double freq = 1.0e3; // 1MHz
+    const double freq = 1.0e6; // 1MHz
     if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
         if(t * freq < 1.0) {
             U(gcoords) = sin(2 * M_PI * t * freq);
@@ -303,7 +303,7 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_K = 1500.0;
     const real_t PLASTIC_K = 2270.0;
 
-    return 1.0;
+    // return 1000.0;
 
     return WATER_K;
 
@@ -562,10 +562,12 @@ __device__ real_t gauss_seidel(const real_t *const U,
                                const Coords gcoords) {
     const real_t dt = dimensions.dt;
 
-    real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / (dt * dt);
-    real_t constants = 1 / (dt * dt);
+    const real_t K = K(gcoords);
 
-    #pragma unroll N_COMPONENTS
+    real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / ((dt*K) * (dt*K));
+    real_t constants = 1 / ((dt*K) * (dt*K));
+
+    #pragma unroll 3 //shouldnt be necessary, redo measurements
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
@@ -576,32 +578,31 @@ __device__ real_t gauss_seidel(const real_t *const U,
         // SOLVE: this is the problematic part. if you remove the if and solve everywhere, it
         // works fine. it should also with the if, but it doesnt
         if(in_PML(gcoords, dimensions)) {
-            PML += K(gcoords) * K(gcoords)
-                 * (sigma(gcoords) * Psi(tau(gcoords, +1))
+            PML += (sigma(gcoords) * Psi(tau(gcoords, +1))
                     - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
                  / (dh * dh);
 
             const real_t psi_value =
-                (-Psi(tau(gcoords, +1)) * sigma(gcoords) * K(gcoords) / (2.0 * dh)
-                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-                 + Psi_prev(gcoords) / dt)
-                / ((1.0 / dt) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
+                (-Psi(tau(gcoords, +1)) * sigma(gcoords) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) / (2.0 * dh)
+                 + Psi_prev(gcoords) / (dt*K))
+                / ((1.0 / (dt*K)) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
 
             const real_t phi_value =
-                (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) * K(gcoords) / (2.0 * dh)
-                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2.0 * dh)
-                 + Phi_prev(gcoords) / dt)
-                / ((1.0 / dt) + (sigma(gcoords) / (2.0 * dh)));
+                (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) / (2.0 * dh)
+                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1)))/ (2.0 * dh)
+                 + Phi_prev(gcoords) / (dt*K))
+                / ((1.0 / (dt*K)) + (sigma(gcoords) / (2.0 * dh)));
 
             set_Phi(gcoords, phi_value);
             set_Psi(gcoords, psi_value);
         }
 
-        result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
-                    * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh)
-                + (U(tau(gcoords, +1)) + U(tau(gcoords, -1))) * K(gcoords) * K(gcoords) / (dh * dh)
+        result += //2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
+                  //  * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh)
+                + (U(tau(gcoords, +1)) + U(tau(gcoords, -1))) / (dh * dh)
                 + PML;
-        constants += K(gcoords) * K(gcoords) * 2.0 / (dh * dh);
+        constants += 2.0 / (dh * dh);
     }
 
     result /= constants;

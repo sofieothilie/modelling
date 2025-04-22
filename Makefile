@@ -28,7 +28,7 @@ debug: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/simulation.cu
 
 console: 
 	mkdir -p wave_data
-	./bin/modeling_cmd -x 0.01 -y 0.01 -z 0.01 -X 100 -Y 100 -Z 100 -t 1e-5 -i 100 -s 5
+	./bin/modeling_cmd -x 0.01 -y 0.01 -z 0.01 -X 100 -Y 100 -Z 100 -t 1e-8 -i 2000 -s 5
 
 
 test: clear build console plot movie
