@@ -303,11 +303,8 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_K = 1500.0;
     const real_t PLASTIC_K = 2270.0;
 
-    // return 1000.0;
 
-    // return WATER_K;
-
-    if(i < padding+Nx / 2)
+    if(i < padding + Nx / 2)
         return WATER_K;
 
     return PLASTIC_K;
@@ -353,7 +350,7 @@ __device__ real_t get_sigma(const Coords gcoords,
 //     }
 // }
 
-#define tau(coords, shift) (tau_shift(coords, shift, component, dimensions))
+#define tau(shift) (tau_shift(gcoords, shift, component, dimensions))
 #define K(gcoords) (get_K(gcoords, dimensions))
 #define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
 #define Psi(gcoords) (get_PML_var(U, Psi, gcoords, component, dimensions))
@@ -480,7 +477,6 @@ __device__ real_t get_PML_var(const real_t *const U,
     // 3. retrieve index of that lcoord in the side
     int_t index = lcoords_to_index(lcoords, dimensions, side);
 
-
     // 4. finally access the PML variable.
     return (var.dir[component].side[side])[index];
 }
@@ -564,44 +560,45 @@ __device__ real_t gauss_seidel(const real_t *const U,
 
     const real_t K = K(gcoords);
 
-    real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / ((dt*K) * (dt*K));
-    real_t constants = 1 / ((dt*K) * (dt*K));
+    real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / (dt * dt);
+    real_t constants = 1 / (dt * dt);
 
-    #pragma unroll 3 //shouldnt be necessary, redo measurements
+#pragma unroll 3 // shouldnt be necessary, redo measurements
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
         real_t PML = 0.0;
 
+        real_t tau_m1 = U(tau(-1));
+        real_t tau_p1 = U(tau(+1));
+
         // update pml
 
-        if(in_PML(gcoords, dimensions)) {
-            PML += (sigma(gcoords) * Psi(tau(gcoords, +1))
-                    - sigma(tau(gcoords, -1)) * Phi(tau(gcoords, -1)))
-                 / (dh * dh);
+        if(in_PML(gcoords, dimensions)) { // is it really always 0 outside this if ?
 
+            tau_m1 += -sigma(tau(-1)) *  Phi(tau(-1));
+            tau_p1 +=  sigma(gcoords) * Psi(tau(+1));
+
+            // computing next phi and psi
             const real_t psi_value =
-                (-Psi(tau(gcoords, +1)) * sigma(gcoords) / (2.0 * dh)
-                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) / (2.0 * dh)
-                 + Psi_prev(gcoords) / (dt*K))
-                / ((1.0 / (dt*K)) + (sigma(tau(gcoords, -1)) / (2.0 * dh)));
+                (-Psi(tau(+1)) * sigma(gcoords) / (2.0 * dh)
+                 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh) + Psi_prev(gcoords) / (dt*K))
+                / ((1.0 / (dt*K)) + (sigma(tau(-1)) / (2.0 * dh)));
 
-            const real_t phi_value =
-                (-Phi(tau(gcoords, -1)) * sigma(tau(gcoords, -1)) / (2.0 * dh)
-                 - (U(tau(gcoords, +1)) - U(tau(gcoords, -1)))/ (2.0 * dh)
-                 + Phi_prev(gcoords) / (dt*K))
+            const real_t phi_value = 
+                (-Phi(tau(-1)) * sigma(tau(-1)) / (2.0 * dh)
+                 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh) + Phi_prev(gcoords) / (dt*K))
                 / ((1.0 / (dt*K)) + (sigma(gcoords) / (2.0 * dh)));
+
 
             set_Phi(gcoords, phi_value);
             set_Psi(gcoords, psi_value);
         }
 
-        result += 2 * (K(tau(gcoords, +1)) - K(tau(gcoords, -1)))
-                   * (U(tau(gcoords, +1)) - U(tau(gcoords, -1))) * K(gcoords) / (2 * dh) / (K*K)
-                + (U(tau(gcoords, +1)) + U(tau(gcoords, -1))) / (dh * dh)
-                + PML;
+        // operator
+        result += K / dh * (K(tau(+1)) - K(tau(-1))) * (tau_p1 - tau_m1)
+                + K * K / (dh * dh) * (tau_m1 + tau_p1);
 
-                
-        constants += 2.0 / (dh * dh);
+        constants += 2.0 * K * K / (dh * dh);
     }
 
     result /= constants;

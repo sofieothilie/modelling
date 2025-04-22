@@ -64,7 +64,7 @@ def plot_data_1d(file_path, output_path):
     data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
 
     # Extract the slice at y = 50 (row 50)
-    y_index = 50  # Change this to any row index you want to plot
+    y_index = 60  # Change this to any row index you want to plot
     slice_data = data.values[y_index, :]  # Select the entire row corresponding to y = 50
 
     # Create the figure and axis objects
