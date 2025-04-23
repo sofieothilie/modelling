@@ -53,7 +53,7 @@ def plot_data_3d(file_path, output_path):
 
 def plot_data_2d(file_path, output_path):
     data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
-    plt.imshow(data, norm=SymLogNorm(linthresh=1e-4, vmin=-1, vmax=1), cmap='seismic')
+    plt.imshow(data,vmin=-0.01, vmax=0.01, cmap='seismic')#, norm=SymLogNorm(linthresh=1e-4, vmin=-1, vmax=1), cmap='seismic'
     plt.colorbar()
     plt.savefig(output_path)
     plt.close()

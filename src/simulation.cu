@@ -209,18 +209,21 @@ __global__ void emit_source(real_t *const U, real_t *const U_prev, const Dimensi
     const int_t padding = dimensions.padding;
 
     const Coords gcoords = { i, j, k };
-     const double freq = 1.0e3; // 1MHz
+     const double freq = 1.0e6; // 1MHz
     // if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
     //     if(t * freq < 10.0) {
     //         U(gcoords) = sin(2 * M_PI * t * freq);
     //     }
     // }
+
+    const Coords emit_coords = {.x=3*Nx/4+padding, .y=Ny/2+padding, .z=Nz/2+padding};
+
     if(t==0) {
-        real_t delta = sqrt(((i - (Nx + padding * 2) / 2.0) * (i - (Nx + padding * 2) / 2.0))
+        real_t delta = sqrt(((i - emit_coords.x) * (i - emit_coords.x))
                                 / (real_t)(0.5 * (Nx + padding * 2))
-                            + ((j - (Ny + padding * 2) / 2.0) * (j - (Ny + padding * 2) / 2.0))
+                            + ((j - emit_coords.y) * (j - emit_coords.y))
                                   / (real_t)(0.5 * (Ny + padding * 2))
-                            + ((k -  (Nz + padding * 2) / 2.0) * (k - (Nz + padding * 2) / 2.0))
+                            + ((k -  emit_coords.z) * (k - emit_coords.z))
                                   / (real_t)(0.5 * (Nz + padding * 2)));
         U_prev(gcoords) = U(gcoords) = exp(-t*freq*t*freq)*exp(-4.0 * delta * delta);
     }
@@ -314,8 +317,7 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_K = 1500.0;
     const real_t PLASTIC_K = 2270.0;
 
-    return 1.0;
-    return WATER_K;
+    // return WATER_K;
 
     if(i < padding + Nx / 2)
         return WATER_K;
@@ -336,9 +338,8 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_RHO = 997.0;
     const real_t PLASTIC_RHO = 1185.0;
 
-    return 1.0;
 
-    return WATER_RHO;
+    // return WATER_RHO;
 
     if(i < padding + Nx / 2)
         return WATER_RHO;
@@ -350,7 +351,7 @@ __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
 
-    const real_t SIGMA = 2.0 / dimensions.dh[component];
+    const real_t SIGMA = 1.0 / dimensions.dh[component];
 
     Dimensions adjusted_dim = dimensions;
     adjusted_dim.Nx += 2;
@@ -735,16 +736,21 @@ __global__ void var_density_solver(real_t *const U,
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
 
+        real_t pml1 = 0.0, pml2 = 0.0;
+        
+        if(in_PML(gcoords, dimensions)) {
+            pml1 = dh * sigma(gcoords) * Psi_prev(tau(+1));
+            pml2 = -dh *sigma(tau(-1)) * Phi_prev(tau(-1));
+        }
+
+
+
         result +=
             dt * dt / (dh * dh) * K(gcoords) * K(gcoords) * Rho(gcoords)
-            * (0.5 * (1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords)) * (U_prev(tau(+1)) - U_prev(gcoords))
+            * (0.5 * (1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords)) * (U_prev(tau(+1)) + pml1 - U_prev(gcoords))
                - 0.5 * (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
-                     * (U_prev(gcoords) - U_prev(tau(-1))));
+                     * (U_prev(gcoords) - U_prev(tau(-1)) - pml2));
 
-        if(in_PML(gcoords, dimensions)) {
-            result += dt * dt * Rho(gcoords) * K(gcoords) / dh
-                    * (sigma(gcoords) * Psi_prev(tau(+1)) - sigma(tau(-1)) * Phi_prev(tau(-1)));
-        }
     }
     U(gcoords) = result;
 }
