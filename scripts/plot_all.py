@@ -51,11 +51,9 @@ def plot_data_3d(file_path, output_path):
     plt.close()
 
 
-def plot_data_2d(file_path, output_path, show_pml=True):
-    data = pd.read_csv(file_path, sep=' ', header=None, dtype=np.float64)
-    if not show_pml:
-        data = data.iloc[20:-20, 20:-20]
-    plt.imshow(data, norm=SymLogNorm(linthresh=1e-3, vmin=-1, vmax=1), cmap='seismic')
+def plot_data_2d(file_path, output_path):
+    data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
+    plt.imshow(data, norm=SymLogNorm(linthresh=1e-4, vmin=-1, vmax=1), cmap='seismic')
     plt.colorbar()
     plt.savefig(output_path)
     plt.close()
@@ -63,7 +61,7 @@ def plot_data_2d(file_path, output_path, show_pml=True):
 
 def plot_data_1d(file_path, output_path):
     # Load the data from the file and reshape it into a 2D array of shape (N, M)
-    data = pd.read_csv(file_path, sep=r'\s+', dtype=np.float64)
+    data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
 
     # Extract the slice at y = 50 (row 50)
     y_index = 60  # Change this to any row index you want to plot
@@ -83,6 +81,7 @@ def plot_data_1d(file_path, output_path):
     ax.set_title(f"1D Slice at y = {y_index}")
 
     ax.set_ylim((-1,1))
+    ax.axvline(x=100, color='red', linestyle='--', label='Boundary limit')
     
     # Save the plot to the output path
     plt.savefig(output_path)
@@ -93,7 +92,7 @@ def plot_data_1d(file_path, output_path):
 def process_file(data_file):
     output_file = data_file.replace(".dat", ".png").replace("wave_data", "wave_images")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    plot_data_2d(data_file, output_file, show_pml=True)
+    plot_data_2d(data_file, output_file)
     print(f"Plot saved to {output_file}")
 
 def main():

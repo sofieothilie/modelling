@@ -60,7 +60,9 @@ inline void gpuAssert(const cudaError_t code, const char *file, const int line) 
 }
 
 #define cudaErrorCheck(ans)                                                                        \
-    { gpuAssert((ans), __FILE__, __LINE__); }
+    {                                                                                              \
+        gpuAssert((ans), __FILE__, __LINE__);                                                      \
+    }
 
 bool init_cuda() {
     int dev_count;
@@ -184,10 +186,6 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    // if(i < 0 && j  == Ny / 2 && k == Nz /2){
-    //     printf("negative i: %d\n", i);
-    // }
-
     // coords (0,0,0) starts at PML, not in ghost cells, so shift (+1) added. ghost cells are at
     // indices [-1] and [Nx]
     return (i + 1) * (Ny + 2 * padding + 2) * (Nz + 2 * padding + 2)
@@ -209,7 +207,7 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t padding = dimensions.padding;
 
     const Coords gcoords = { 2 * Nx / 8 + padding, 4 * Ny / 8 + padding, Nz / 2 + padding };
-    const double freq = 1.0e3; // 1MHz
+    const double freq = 1.0e6; // 1MHz
     if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
         if(t * freq < 1.0) {
             U(gcoords) = sin(2 * M_PI * t * freq);
@@ -305,8 +303,6 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_K = 1500.0;
     const real_t PLASTIC_K = 2270.0;
 
-    return 1.0;
-    return WATER_K;
 
     if(i < padding + Nx / 2)
         return WATER_K;
@@ -314,34 +310,11 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     return PLASTIC_K;
 }
 
-__device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
-    const int_t padding = dimensions.padding;
-
-    const int_t i = gcoords.x;
-    const int_t j = gcoords.y;
-    const int_t k = gcoords.z;
-
-    const real_t WATER_RHO = 997.0;
-    const real_t PLASTIC_RHO = 1185.0;
-
-    return 1.0;
-
-    return WATER_RHO;
-
-    if(i < padding + Nx / 2)
-        return WATER_RHO;
-
-    return PLASTIC_RHO;
-}
-
 __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
 
-    const real_t SIGMA = 2.0 / dimensions.dh[component];
+    const real_t SIGMA = 1.0 / dimensions.dh[component];
 
     Dimensions adjusted_dim = dimensions;
     adjusted_dim.Nx += 2;
@@ -379,14 +352,13 @@ __device__ real_t get_sigma(const Coords gcoords,
 
 #define tau(shift) (tau_shift(gcoords, shift, component, dimensions))
 #define K(gcoords) (get_K(gcoords, dimensions))
-#define Rho(gcoords) (get_rho(gcoords, dimensions))
 #define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
-#define Psi(gcoords) (get_PML_var(Psi, gcoords, component, dimensions))
-#define Psi_prev(gcoords) (get_PML_var(Psi_prev, gcoords, component, dimensions))
-#define Phi(gcoords) (get_PML_var(Phi, gcoords, component, dimensions))
-#define Phi_prev(gcoords) (get_PML_var(Phi_prev, gcoords, component, dimensions))
-#define set_Psi(value) (set_PML_var(Psi, value, gcoords, component, dimensions))
-#define set_Phi(value) (set_PML_var(Phi, value, gcoords, component, dimensions))
+#define Psi(gcoords) (get_PML_var(U, Psi, gcoords, component, dimensions))
+#define Psi_prev(gcoords) (get_PML_var(U, Psi_prev, gcoords, component, dimensions))
+#define Phi(gcoords) (get_PML_var(U, Phi, gcoords, component, dimensions))
+#define Phi_prev(gcoords) (get_PML_var(U, Phi_prev, gcoords, component, dimensions))
+#define set_Psi(gcoords, value) (set_PML_var(Psi, value, gcoords, component, dimensions))
+#define set_Phi(gcoords, value) (set_PML_var(Phi, value, gcoords, component, dimensions))
 
 __device__ Side get_side(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
@@ -486,7 +458,8 @@ __device__ int_t lcoords_to_index(Coords lcoords, Dimensions dimensions, Side si
 }
 
 // this interfaces with the PML weird shape
-__device__ real_t get_PML_var(const PML_Variable var,
+__device__ real_t get_PML_var(const real_t *const U,
+                              const PML_Variable var,
                               const Coords gcoords,
                               const Component component,
                               const Dimensions dimensions) {
@@ -546,6 +519,15 @@ void swap_aux_variables(PML_Variable *u, PML_Variable *v) {
     *v = temp;
 }
 
+__global__ void set_random_values(real_t *const U, const Dimensions dimensions) {
+    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+    const Coords gcoords = { .x = i, .y = j, .z = k };
+
+    U(gcoords) = (i - 2 * j + k) % (i + j + k);
+}
+
 __device__ bool in_bounds(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
@@ -600,13 +582,13 @@ __device__ real_t gauss_seidel(const real_t *const U,
                  + Psi_prev(gcoords) / (dt * K))
                 / ((1.0 / (dt * K)) + (sigma(tau(-1)) / 2.0));
 
-            const real_t phi_value =
+            const real_t phi_value = 
                 (-Phi(tau(-1)) * sigma(tau(-1)) / 2.0 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh)
                  + Phi_prev(gcoords) / (dt * K))
                 / ((1.0 / (dt * K)) + (sigma(gcoords) / 2.0));
 
-            set_Phi(phi_value);
-            set_Psi(psi_value);
+            set_Phi(gcoords, phi_value);
+            set_Psi(gcoords, psi_value);
         }
 
         /*
@@ -699,85 +681,6 @@ __global__ void gauss_seidel_black(real_t *const U,
 
     U(gcoords) =
         gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
-}
-
-__global__ void var_density_solver(real_t *const U,
-                                   const real_t *const U_prev,
-                                   const real_t *const U_prev_prev,
-                                   PML_Variable Psi,
-                                   const PML_Variable Psi_prev,
-                                   PML_Variable Phi,
-                                   const PML_Variable Phi_prev,
-                                   const Dimensions dimensions) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-
-    const real_t dt = dimensions.dt;
-
-    Coords gcoords = Coords { i, j, k };
-
-    if(!in_bounds(gcoords, dimensions)) {
-        return;
-    }
-
-    // update at position  (i,j,k)
-    real_t result = -U_prev_prev(gcoords) + 2 * U_prev(gcoords);
-    for(Component component = X; component < N_COMPONENTS; component++) {
-        const real_t dh = dimensions.dh[component];
-
-        result +=
-            dt * dt / (dh * dh) * K(gcoords) * K(gcoords) * Rho(gcoords)
-            * (0.5 * (1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords)) * (U_prev(tau(+1)) - U_prev(gcoords))
-               - 0.5 * (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
-                     * (U_prev(gcoords) - U_prev(tau(-1))));
-
-        if(in_PML(gcoords, dimensions)) {
-            result += dt * dt * Rho(gcoords) * K(gcoords) / dh
-                    * (sigma(gcoords) * Psi_prev(tau(+1)) - sigma(tau(-1)) * Phi_prev(tau(-1)));
-        }
-    }
-    U(gcoords) = result;
-}
-
-__global__ void pml_var_solver(real_t *const U_prev,
-                               PML_Variable Psi,
-                               const PML_Variable Psi_prev,
-                               PML_Variable Phi,
-                               const PML_Variable Phi_prev,
-                               const Dimensions dimensions) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-
-    Coords gcoords = Coords { i, j, k };
-
-    if(in_PML(gcoords, dimensions)) {
-        const real_t dt = dimensions.dt;
-
-        for(Component component = X; component < N_COMPONENTS; component++) {
-            const real_t dh = dimensions.dh[component];
-
-            // I think are wrong: dt should multiply the whole, maybe K as well.
-            // time indices it also  has a s_i, but that's soo wrong
-            // using U_prev instead of U, I guess it makes sense
-            real_t next_phi =
-                Phi_prev(gcoords)
-                - 0.5 * dt * K(gcoords)
-                      * (sigma(tau(-1)) * Phi_prev(tau(-1)) + sigma(gcoords) * Phi_prev(gcoords))
-                -  dt * K(gcoords) / (2.0 * dh) * (U_prev(tau(+1)) - U_prev(tau(-1)));
-
-            real_t next_psi =
-                Psi_prev(gcoords)
-                - 0.5 * dt * K(gcoords)
-                      * (sigma(tau(-1)) * Psi_prev(gcoords) + sigma(gcoords) * Psi_prev(tau(+1)))
-                -  dt * K(gcoords)/ (2.0 * dh) * (U_prev(tau(+1)) - U_prev(tau(-1)));
-
-            set_Phi(next_phi);
-            set_Psi(next_psi);
-        }
-        //something is wrong. is it supposed to ripple like this ?
-    }
 }
 
 void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
@@ -886,26 +789,34 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         dim3 block(block_x, block_y, block_z);
         dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
                   (Ny + 2 * padding + block_y - 1) / block_y,
-                  ((Nz + 2 * padding) + block_z - 1) / block_z);
+                  ((Nz + 2 * padding) / 2 + block_z - 1) / block_z);
 
-        var_density_solver<<<grid, block>>>(U,
-                                            U_prev,
-                                            U_prev_prev,
-                                            Psi,
-                                            Psi_prev,
-                                            Phi,
-                                            Phi_prev,
-                                            dimensions);
+        emit_source<<<grid, block>>>(U_prev, dimensions, iteration * dt);
 
-        cudaError_t err = cudaGetLastError();
-        if(err != cudaSuccess) {
-            printf("cuda kernel error: %s\n", cudaGetErrorString(err));
-            exit(EXIT_FAILURE);
+        for(size_t iter = 0; iter < 2; iter++) {
+            gauss_seidel_red<<<grid, block>>>(U,
+                                              U_prev,
+                                              U_prev_prev,
+                                              Psi,
+                                              Psi_prev,
+                                              Phi,
+                                              Phi_prev,
+                                              dimensions);
+            gauss_seidel_black<<<grid, block>>>(U,
+                                                U_prev,
+                                                U_prev_prev,
+                                                Psi,
+                                                Psi_prev,
+                                                Phi,
+                                                Phi_prev,
+                                                dimensions);
+
+            cudaError_t err = cudaGetLastError();
+            if(err != cudaSuccess) {
+                printf("cuda kernel error: %s\n", cudaGetErrorString(err));
+                exit(EXIT_FAILURE);
+            }
         }
-
-        emit_source<<<grid, block>>>(U, dimensions, iteration * dt);
-
-        pml_var_solver<<<grid, block>>>(U_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions);
 
         // show_sigma<<<grid, block>>>(dimensions, U, U_prev);
 
