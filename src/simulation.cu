@@ -314,7 +314,7 @@ __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
 
-    const real_t SIGMA = 1.0;
+    const real_t SIGMA = 1.0 / dimensions.dh[component];
 
     Dimensions adjusted_dim = dimensions;
     adjusted_dim.Nx += 2;
@@ -566,7 +566,6 @@ __device__ real_t gauss_seidel(const real_t *const U,
 #pragma unroll 3 // shouldnt be necessary, redo measurements
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
-        real_t PML = 0.0;
 
         real_t tau_m1 = U(tau(-1));
         real_t tau_p1 = U(tau(+1));
@@ -574,28 +573,59 @@ __device__ real_t gauss_seidel(const real_t *const U,
         // update pml
 
         if(in_PML(gcoords, dimensions)) { // is it really always 0 outside this if ?
-
-            tau_m1 += -sigma(tau(-1)) *  Phi(tau(-1));
-            tau_p1 +=  sigma(gcoords) * Psi(tau(+1));
+            tau_m1 += -dh * sigma(tau(-1)) * Phi(tau(-1));
+            tau_p1 += dh * sigma(gcoords) * Psi(tau(+1));
 
             // computing next phi and psi
             const real_t psi_value =
-                (-Psi(tau(+1)) * sigma(gcoords) / (2.0 * dh)
-                 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh) + Psi_prev(gcoords) / (dt*K))
-                / ((1.0 / (dt*K)) + (sigma(tau(-1)) / (2.0 * dh)));
+                (-Psi(tau(+1)) * sigma(gcoords) / 2.0 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh)
+                 + Psi_prev(gcoords) / (dt * K))
+                / ((1.0 / (dt * K)) + (sigma(tau(-1)) / 2.0));
 
             const real_t phi_value = 
-                (-Phi(tau(-1)) * sigma(tau(-1)) / (2.0 * dh)
-                 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh) + Phi_prev(gcoords) / (dt*K))
-                / ((1.0 / (dt*K)) + (sigma(gcoords) / (2.0 * dh)));
-
+                (-Phi(tau(-1)) * sigma(tau(-1)) / 2.0 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh)
+                 + Phi_prev(gcoords) / (dt * K))
+                / ((1.0 / (dt * K)) + (sigma(gcoords) / 2.0));
 
             set_Phi(gcoords, phi_value);
             set_Psi(gcoords, psi_value);
         }
 
+        /*
+                real_t result =
+            (d_dt * d_dt)
+                * (2 * (-K(i - 1, j, k) / (2 * d_dx) + K(i + 1, j, k) / (2 * d_dx))
+                    * (-d_P(i - 1, j, k) / (2 * d_dx) + d_P(i + 1, j, k) / (2 * d_dx)) * K(i, j, k)
+                + 2 * (-K(i, j - 1, k) / (2 * d_dy) + K(i, j + 1, k) / (2 * d_dy))
+                        * (-d_P(i, j - 1, k) / (2 * d_dy) + d_P(i, j + 1, k) / (2 * d_dy)) * K(i, j,
+           k)
+                + 2 * (-K(i, j, k - 1) / (2 * d_dz) + K(i, j, k + 1) / (2 * d_dz))
+                        * (-d_P(i, j, k - 1) / (2 * d_dz) + d_P(i, j, k + 1) / (2 * d_dz)) * K(i, j,
+           k)
+                + (-2 * d_P(i, j, k) / (d_dx * d_dx) + d_P(i - 1, j, k) / (d_dx * d_dx)
+                    + d_P(i + 1, j, k) / (d_dx * d_dx))
+                        * (K(i, j, k) * K(i, j, k))
+                + (-2 * d_P(i, j, k) / (d_dy * d_dy) + d_P(i, j - 1, k) / (d_dy * d_dy)
+                    + d_P(i, j + 1, k) / (d_dy * d_dy))
+                        * (K(i, j, k) * K(i, j, k))
+                + (-2 * d_P(i, j, k) / (d_dz * d_dz) + d_P(i, j, k - 1) / (d_dz * d_dz)
+                    + d_P(i, j, k + 1) / (d_dz * d_dz))
+                        * (K(i, j, k) * K(i, j, k))
+                + PML_val)
+            + 2 * d_P_prv(i, j, k) - d_P_prv_prv(i, j, k);
+
+        *///working K change. its the same !
+
+        // observations:
+        // 1. using the "correct" formula, the wave invert when it shouldnt
+        // 2. using the inverted formula, the pml doesnt explode at the changing boundary
+        // 3. with a strong PML, using a 0 speed explodes fast
+
+        // -> something is seriously wrong with my formula, at the PML level and normal level
+        // (maybe)
+
         // operator
-        result += K / dh * (K(tau(+1)) - K(tau(-1))) * (tau_p1 - tau_m1)
+        result += 0.5 * K / (dh * dh) * (K(tau(+1)) - K(tau(-1))) * (tau_p1 - tau_m1)
                 + K * K / (dh * dh) * (tau_m1 + tau_p1);
 
         constants += 2.0 * K * K / (dh * dh);
