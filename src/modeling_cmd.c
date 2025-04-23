@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
             .Nx = options->Nx,
             .Ny = options->Ny,
             .Nz = options->Nz,
-            .padding = 10,
+            .padding = 20,
             .dh = {
                 options->sim_Lx / options->Nx,
                 options->sim_Ly / options->Ny,
