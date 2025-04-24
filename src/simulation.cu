@@ -199,34 +199,33 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
 #define U_prev_prev(gcoords) U_prev_prev[gcoords_to_index(gcoords, dimensions)]
 
 __global__ void emit_source(real_t *const U, real_t *const U_prev, const Dimensions dimensions, const real_t t) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+    // const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    // const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    // const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    const Coords gcoords = { i, j, k };
+    const Coords gcoords = {.x=Nx/2+padding, .y=Ny/2+padding, .z=padding+10};
+
      const double freq = 1.0e6; // 1MHz
-    // if(i == gcoords.x && j == gcoords.y && k == gcoords.z) {
-    //     if(t * freq < 10.0) {
-    //         U(gcoords) = sin(2 * M_PI * t * freq);
-    //     }
-    // }
-
-    const Coords emit_coords = {.x=3*Nx/4+padding, .y=Ny/2+padding, .z=Nz/2+padding};
-
-    if(t==0) {
-        real_t delta = sqrt(((i - emit_coords.x) * (i - emit_coords.x))
-                                / (real_t)(0.5 * (Nx + padding * 2))
-                            + ((j - emit_coords.y) * (j - emit_coords.y))
-                                  / (real_t)(0.5 * (Ny + padding * 2))
-                            + ((k -  emit_coords.z) * (k - emit_coords.z))
-                                  / (real_t)(0.5 * (Nz + padding * 2)));
-        U_prev(gcoords) = U(gcoords) = exp(-t*freq*t*freq)*exp(-4.0 * delta * delta);
+     {
+        U(gcoords) = sin(2 * M_PI * t * freq);
     }
+    
+
+
+    // if(t==0) {
+    //     real_t delta = sqrt(((i - emit_coords.x) * (i - emit_coords.x))
+    //                             / (real_t)(0.5 * (Nx + padding * 2))
+    //                         + ((j - emit_coords.y) * (j - emit_coords.y))
+    //                               / (real_t)(0.5 * (Ny + padding * 2))
+    //                         + ((k -  emit_coords.z) * (k - emit_coords.z))
+    //                               / (real_t)(0.5 * (Nz + padding * 2)));
+    //     U_prev(gcoords) = U(gcoords) = exp(-t*freq*t*freq)*exp(-4.0 * delta * delta);
+    // }
 }
 
 // dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
@@ -815,10 +814,11 @@ void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
         exit(EXIT_FAILURE);
     }
 
-    const int_t k = Nz / 2 + padding;
-    for(int j = 0; j < Ny + 2 * padding; j++) {
-        int i;
-        for(i = 0; i < Nx + 2 * padding - 1; i++) {
+    const int_t j = Ny / 2 + padding;
+    for(int i = 0; i < Nx + 2 * padding - 1; i++) {
+        int k;
+        for(k = 0; k < Nz + 2 * padding; k++) {
+
             const Coords gcoords = { .x = i, .y = j, .z = k };
             const int w =
                 fprintf(out, "%.16lf ", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
@@ -918,7 +918,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             exit(EXIT_FAILURE);
         }
 
-        emit_source<<<grid, block>>>(U, U_prev, dimensions, iteration * dt);
+        emit_source<<<1,1>>>(U, U_prev, dimensions, iteration * dt);
 
         pml_var_solver<<<grid, block>>>(U_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions);
 
