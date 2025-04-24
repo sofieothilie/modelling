@@ -576,9 +576,8 @@ __device__ void set_PML_var(PML_Variable var,
     (var.dir[component].side[side])[index] = value;
 }
 
-void move_buffer_window(real_t **const U, real_t **const U_prev, real_t **const U_prev_prev) {
-    real_t *const temp = *U_prev_prev;
-    *U_prev_prev = *U_prev;
+void move_buffer_window(real_t **const U, real_t **const U_prev) {
+    real_t *const temp = *U_prev;
     *U_prev = *U;
     *U = temp;
 }
@@ -747,7 +746,6 @@ __global__ void gauss_seidel_black(real_t *const U,
 
 __global__ void var_density_solver(real_t *const U,
                                    const real_t *const U_prev,
-                                   const real_t *const U_prev_prev,
                                    PML_Variable Psi,
                                    const PML_Variable Psi_prev,
                                    PML_Variable Phi,
@@ -766,7 +764,10 @@ __global__ void var_density_solver(real_t *const U,
     }
 
     // update at position  (i,j,k)
-    real_t result = -U_prev_prev(gcoords) + 2 * U_prev(gcoords);
+    //U contains the prev prev value!
+    real_t result = -U(gcoords) + 2 * U_prev(gcoords);
+
+    #pragma unroll 3
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
 
@@ -801,6 +802,7 @@ __global__ void pml_var_solver(real_t *const U_prev,
     if(in_PML(gcoords, dimensions)) {
         const real_t dt = dimensions.dt;
 
+        #pragma unroll 3
         for(Component component = X; component < N_COMPONENTS; component++) {
             const real_t dh = dimensions.dh[component];
 
@@ -867,14 +869,7 @@ void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
     iter++;
 }
 
-__global__ void show_sigma(Dimensions dimensions, real_t *U, real_t *U_prev) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-    const Coords gcoords = { .x = i, .y = j, .z = k };
 
-    U(gcoords) = U_prev(gcoords) = get_sigma(gcoords, dimensions, X);
-}
 
 int signature(real_t **sig_buf) {
     FILE *f = fopen("data/signature.dat", "rb");
@@ -960,7 +955,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     real_t *U = allocate_domain(dimensions);
     real_t *U_prev = allocate_domain(dimensions);
-    real_t *U_prev_prev = allocate_domain(dimensions);
 
     FILE *output_buffer = fopen("sensor_out/dest_wave.dat", "w");
 
@@ -994,7 +988,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
         var_density_solver<<<grid, block>>>(U,
                                             U_prev,
-                                            U_prev_prev,
                                             Psi,
                                             Psi_prev,
                                             Phi,
@@ -1026,7 +1019,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         }
         // show_sigma<<<grid, block>>>(dimensions, U, U_prev);
 
-        move_buffer_window(&U, &U_prev, &U_prev_prev);
+        move_buffer_window(&U, &U_prev);
         swap_aux_variables(&Psi, &Psi_prev);
         swap_aux_variables(&Phi, &Phi_prev);
     }
@@ -1042,7 +1035,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     free_domain(U);
     free_domain(U_prev);
-    free_domain(U_prev_prev);
 
     free_pml_variables(Psi);
     free_pml_variables(Phi);
