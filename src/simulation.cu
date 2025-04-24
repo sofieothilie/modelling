@@ -353,7 +353,7 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
 
     // return WATER_K;
 
-    if(k < padding + 5* Nz/6 )
+    if(k < padding + 5 * Nz / 6)
         return WATER_K;
 
     return PLASTIC_K;
@@ -374,7 +374,7 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
 
     // return 0;
 
-    if(k < padding + 5*Nz / 6)
+    if(k < padding + 5 * Nz / 6)
         return WATER_RHO;
 
     return PLASTIC_RHO;
@@ -398,27 +398,6 @@ __device__ real_t get_sigma(const Coords gcoords,
     return 0.0;
 }
 
-// __host__ __device__ int_t lcoords_to_index(const Coords lcoords,
-//                                            const Dimensions dimensions,
-//                                            const Side side) {
-//     const int_t i = lcoords.x;
-//     const int_t j = lcoords.y;
-//     const int_t k = lcoords.z;
-
-//     const int_t Nx = dimensions.Nx;
-//     const int_t Ny = dimensions.Ny;
-//     const int_t Nz = dimensions.Nz;
-//     const int_t padding = dimensions.padding;
-
-//     switch(side) {
-//         case BOTTOM:
-//             return i * (Ny + padding) * padding + j * padding + k;
-//         case SIDE:
-//             return i * (Ny + padding) * Nz + j * Nz + k;
-//         case FRONT:
-//             return i * padding * Nz + j * Nz + k;
-//     }
-// }
 
 #define tau(shift) (tau_shift(gcoords, shift, component, dimensions))
 #define K(gcoords) (get_K(gcoords, dimensions))
@@ -623,7 +602,6 @@ __device__ real_t gauss_seidel(const real_t *const U,
     real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / (dt * dt);
     real_t constants = 1 / (dt * dt);
 
-#pragma unroll 3
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
 
@@ -764,10 +742,9 @@ __global__ void var_density_solver(real_t *const U,
     }
 
     // update at position  (i,j,k)
-    //U contains the prev prev value!
+    // U contains the prev prev value!
     real_t result = -U(gcoords) + 2 * U_prev(gcoords);
 
-    #pragma unroll 3
     for(Component component = X; component < N_COMPONENTS; component++) {
         const real_t dh = dimensions.dh[component];
 
@@ -802,7 +779,6 @@ __global__ void pml_var_solver(real_t *const U_prev,
     if(in_PML(gcoords, dimensions)) {
         const real_t dt = dimensions.dt;
 
-        #pragma unroll 3
         for(Component component = X; component < N_COMPONENTS; component++) {
             const real_t dh = dimensions.dh[component];
 
@@ -868,8 +844,6 @@ void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
     fclose(out);
     iter++;
 }
-
-
 
 int signature(real_t **sig_buf) {
     FILE *f = fopen("data/signature.dat", "rb");
@@ -986,13 +960,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
                   (Ny + 2 * padding + block_y - 1) / block_y,
                   ((Nz + 2 * padding) + block_z - 1) / block_z);
 
-        var_density_solver<<<grid, block>>>(U,
-                                            U_prev,
-                                            Psi,
-                                            Psi_prev,
-                                            Phi,
-                                            Phi_prev,
-                                            dimensions);
+        var_density_solver<<<grid, block>>>(U, U_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions);
 
         real_t src_freq = 1.0e6;
         real_t src_sampling_rate = 8 * src_freq;
