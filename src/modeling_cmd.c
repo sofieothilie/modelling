@@ -2,6 +2,7 @@
 #include "simulation.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #define MODEL_Nx 1201
 #define MODEL_Ny 401
@@ -36,17 +37,17 @@ int main(int argc, char **argv) {
 
     fclose(model_file); // data is safe in array, we don't need the file anymore
 
+    int_t Nx = (int)ceil(options->sim_Lx / options->dh);
+    int_t Ny = (int)ceil(options->sim_Ly / options->dh);
+    int_t Nz = (int)ceil(options->sim_Lz / options->dh);
+
     simulation_parameters p = {
         .dimensions = {
-            .Nx = options->Nx,
-            .Ny = options->Ny,
-            .Nz = options->Nz,
+            .Nx = Nx,
+            .Ny = Ny,
+            .Nz = Nz,
             .padding = 5,
-            .dh = {
-                options->sim_Lx / options->Nx,
-                options->sim_Ly / options->Ny,
-                options->sim_Lz / options->Nz
-            },
+            .dh = options->dh,
             .dt = options->dt,
         },
         .sim_Lx = options->sim_Lx,

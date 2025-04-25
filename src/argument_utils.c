@@ -1,4 +1,5 @@
 #include "argument_utils.h"
+#include "simulation.h"
 
 #include <getopt.h>
 #include <stddef.h>
@@ -15,26 +16,24 @@ OPTIONS
      */
 
     real_t sim_Lx = 0.01, sim_Ly = 0.01, sim_Lz = 0.01;
-    real_t dt = 1e-5;
-    int_t Nx = 100, Ny = 100, Nz = 100;
+    real_t dt = 1e-8;
+    real_t h = 1e-4;
     int_t max_iteration = 50;
     int_t snapshot_frequency = 10;
 
     static struct option const long_options[] =  {
-        {"help",                no_argument,       0, 'h'},
+        {"help",                no_argument,       0, '?'},
         {"simul_x",             required_argument, 0, 'x'},
         {"simul_y",             required_argument, 0, 'y'},
         {"simul_z",             required_argument, 0, 'z'},
-        {"resol_x",             required_argument, 0, 'X'},//ensure that windows knows difference, but should
-        {"resol_y",             required_argument, 0, 'Y'},
-        {"resol_z",             required_argument, 0, 'Z'},
+        {"dh",                  required_argument, 0, 'h'},
         {"dt",                  required_argument, 0, 't'},
         {"max_iteration",       required_argument, 0, 'i'},
         {"snapshot_frequency",  required_argument, 0, 's'},
         {0, 0, 0, 0}
     };
 
-    static char const * short_options = "hx:y:z:X:Y:Z:t:i:s:";
+    static char const * short_options = "?x:y:z:h:t:i:s:";
     {
         char *endptr;
         int c;
@@ -44,7 +43,7 @@ OPTIONS
         {
             switch (c)
             {
-            case 'h':
+            case '?':
                 help( argv[0], 0, NULL );
                 exit(0);
                 break;
@@ -72,30 +71,15 @@ OPTIONS
                     return NULL;
                 }
                 break;
-            case 'X':
-                Nx = strtol(optarg, &endptr, 10);
-                if ( endptr == optarg || Nx < 0 )
+            case 'h':
+                h = strtod(optarg, &endptr);
+                if ( endptr == optarg || h < 0 )
                 {
                     help( argv[0], c, optarg );
                     return NULL;
                 }
                 break;
-            case 'Y':
-                Ny = strtol(optarg, &endptr, 10);
-                if ( endptr == optarg || Ny < 0 )
-                {
-                    help( argv[0], c, optarg );
-                    return NULL;
-                }
-                break;
-            case 'Z':
-                Nz = strtol(optarg, &endptr, 10);
-                if ( endptr == optarg || Nz < 0 )
-                {
-                    help( argv[0], c, optarg );
-                    return NULL;
-                }
-                break;
+
             case 't':
                 dt = strtod(optarg, &endptr);
                 if ( endptr == optarg || dt <= 0 )
@@ -124,7 +108,6 @@ OPTIONS
                 abort();
             }
         }
-
     }
 
     if ( argc < (optind) )
@@ -140,9 +123,7 @@ OPTIONS
     args_parsed->sim_Ly = sim_Ly;
     args_parsed->sim_Lz = sim_Lz;
     args_parsed->dt = dt;
-    args_parsed->Nx = Nx;
-    args_parsed->Ny = Ny;
-    args_parsed->Nz = Nz;
+    args_parsed->dh = h;
     args_parsed->max_iteration = max_iteration;
     args_parsed->snapshot_frequency = snapshot_frequency;
 

@@ -9,7 +9,7 @@ typedef struct {
     int_t Ny;
     int_t Nz;
     int_t padding;
-    real_t dh[3];
+    real_t dh;
     real_t dt;
 } Dimensions;
 

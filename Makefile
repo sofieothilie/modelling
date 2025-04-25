@@ -17,17 +17,19 @@ movie:
 
 
 
-NVCC_FLAGS =  -O3 -I./src
+NVCC_FLAGS =  -O3 -Wno-deprecated-gpu-targets -I./src
 
 build: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/simulation.cu
 	nvcc $(NVCC_FLAGS) $^ -o  bin/modeling_cmd
+	@echo "Compilation Successful"
 
 debug: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/simulation.cu
 	nvcc $(NVCC_FLAGS) $^ -g -G -lineinfo -o  bin/modeling_cmd
+	@echo "Debug Compilation Successful"
 
 console: 
 	mkdir -p wave_data
-	./bin/modeling_cmd -x 0.03 -y 0.03 -z 0.05 -X 200 -Y 200 -Z 334 -t 3.5e-8 -i 1000 -s 5
+	./bin/modeling_cmd -x 0.03 -y 0.03 -z 0.05 -h 0.00015 -t 3.5e-8 -i 500 -s 5
 
 
 test: clear build console plot movie

@@ -180,7 +180,7 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
     const int_t j = gcoords.y;
     const int_t k = gcoords.z;
 
-    const int_t Nx = dimensions.Nx;
+    // const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
@@ -200,19 +200,19 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
 #define U_prev_prev(gcoords) U_prev_prev[gcoords_to_index(gcoords, dimensions)]
 
 __global__ void emit_source(real_t *const U, const Dimensions dimensions, const real_t value) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+    // const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    // const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    // const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
+    // const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
     int n_source = 7;
     int spacing = 2; // spacing in terms of cells, not distance
 
-    const double freq = 1.0e6; // 1MHz
+    // const double freq = 1.0e6; // 1MHz
 
     // grid of sources over yz plane, at x = 5 maybe
     for(int n_i = 0; n_i < n_source; n_i++) {
@@ -220,8 +220,8 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
             int idx_i = padding + Nx / 2 - (n_source / 2 * spacing) + n_i * spacing;
             int idx_j = padding + Ny / 2 - (n_source / 2 * spacing) + n_j * spacing;
 
-            double shift = 0;
-            (double) n_j / n_source * 2 * M_PI * 0.7;
+            // double shift = 0;
+            // (double) n_j / n_source * 2 * M_PI * 0.7;
             // double sine = sin(2 * M_PI * t * freq - shift);
 
             const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
@@ -242,11 +242,11 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
 }
 
 void get_recv(const real_t *d_buffer, FILE *output, Dimensions dimensions) {
-    static int_t iter = 0;
+    // static int_t iter = 0;
 
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
+    // const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
     const int_t size = get_domain_size(dimensions);
@@ -335,17 +335,20 @@ __device__ Coords tau_shift(const Coords gcoords,
             return { i, j + shift, k };
         case Z:
             return { i, j, k + shift };
+        default:
+            printf("error in tau shift\n");
+            return gcoords;
     }
 }
 
 __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
+    // const int_t Nx = dimensions.Nx;
+    // const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    const int_t i = gcoords.x;
-    const int_t j = gcoords.y;
+    // const int_t i = gcoords.x;
+    // const int_t j = gcoords.y;
     const int_t k = gcoords.z;
 
     const real_t WATER_K = 1500.0;
@@ -360,13 +363,13 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
 }
 
 __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
+    // const int_t Nx = dimensions.Nx;
+    // const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    const int_t i = gcoords.x;
-    const int_t j = gcoords.y;
+    // const int_t i = gcoords.x;
+    // const int_t j = gcoords.y;
     const int_t k = gcoords.z;
 
     const real_t WATER_RHO = 997.0;
@@ -384,7 +387,7 @@ __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
 
-    const real_t SIGMA = 1.0 / dimensions.dh[component];
+    const real_t SIGMA = 1.0 / dimensions.dh;
 
     Dimensions adjusted_dim = dimensions;
     adjusted_dim.Nx += 2;
@@ -457,7 +460,7 @@ __device__ Coords gcoords_to_lcoords(Coords gcoords, Dimensions dimensions, Side
         case TOP: // TOP is the only side that is already in place
             return gcoords;
         case BOTTOM:
-            return Coords { .x = i, .y = j, .z = k - Nx - padding };
+            return Coords { .x = i, .y = j, .z = k - Nz - padding };
         case LEFT:
             return Coords { .x = i, .y = j, .z = k - padding };
         case RIGHT:
@@ -477,7 +480,6 @@ __device__ int_t lcoords_to_index(Coords lcoords, Dimensions dimensions, Side si
     const int_t j = lcoords.y;
     const int_t k = lcoords.z;
 
-    const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
@@ -603,7 +605,7 @@ __device__ real_t gauss_seidel(const real_t *const U,
     real_t constants = 1 / (dt * dt);
 
     for(Component component = X; component < N_COMPONENTS; component++) {
-        const real_t dh = dimensions.dh[component];
+        const real_t dh = dimensions.dh;
 
         real_t tau_m1 = U(tau(-1));
         real_t tau_p1 = U(tau(+1));
@@ -746,7 +748,7 @@ __global__ void var_density_solver(real_t *const U,
     real_t result = -U(gcoords) + 2 * U_prev(gcoords);
 
     for(Component component = X; component < N_COMPONENTS; component++) {
-        const real_t dh = dimensions.dh[component];
+        const real_t dh = dimensions.dh;
 
         real_t pml1 = 0.0, pml2 = 0.0;
 
@@ -780,7 +782,7 @@ __global__ void pml_var_solver(real_t *const U_prev,
         const real_t dt = dimensions.dt;
 
         for(Component component = X; component < N_COMPONENTS; component++) {
-            const real_t dh = dimensions.dh[component];
+            const real_t dh = dimensions.dh;
 
             // I think are wrong: dt should multiply the whole, maybe K as well.
             // time indices it also  has a s_i, but that's soo wrong
@@ -901,21 +903,19 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     Dimensions dimensions = p.dimensions;
 
-    const real_t sim_Lx = p.sim_Lx;
-    const real_t sim_Ly = p.sim_Ly;
-    const real_t sim_Lz = p.sim_Lz;
+    // const real_t sim_Lx = p.sim_Lx;
+    // const real_t sim_Ly = p.sim_Ly;
+    // const real_t sim_Lz = p.sim_Lz;
 
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
-    const real_t dx = dimensions.dh[X];
-    const real_t dy = dimensions.dh[Y];
-    const real_t dz = dimensions.dh[Z];
+    // const real_t dh = dimensions.dh;
 
-    printf("dx = %.4f, dy = %.4f, dz = %.4f\n", dx, dy, dz);
+    printf("Nx = %d, Ny = %d, Nz = %d\n", Nx, Ny, Nz);
 
-    printf("version 2.0\n");
+    printf("version RK4\n");
 
     if(!init_cuda()) {
         fprintf(stderr, "Could not initialize CUDA\n");
@@ -946,8 +946,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();
             domain_save(U, dimensions);
-            // Phi_save(Phi, dimensions);
-            // Psi_save(Psi, dimensions);
         }
 
         get_recv(U, output_buffer, dimensions);
