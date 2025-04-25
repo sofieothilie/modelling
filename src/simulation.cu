@@ -34,6 +34,13 @@ typedef struct {
     PML_Shell dir[N_COMPONENTS];
 } PML_Variable;
 
+typedef struct {
+    real_t *U;
+    real_t *V;
+    PML_Variable Phi;
+    PML_Variable Psi;
+} SimulationState;
+
 __device__ __host__ Component &operator++(Component &a) {
     int n = static_cast<int>(a);
     ++n;
@@ -170,8 +177,22 @@ real_t *allocate_domain(const Dimensions dimensions) {
     return result;
 }
 
+SimulationState allocate_simulation_state(const Dimensions dimensions) {
+    return SimulationState { .U = allocate_domain(dimensions),
+                             .V = allocate_domain(dimensions),
+                             .Phi = allocate_pml_variables(dimensions),
+                             .Psi = allocate_pml_variables(dimensions) };
+}
+
 void free_domain(real_t *buf) {
     cudaErrorCheck(cudaFree(buf));
+}
+
+void free_simulation_state(SimulationState s) {
+    free_domain(s.U);
+    free_domain(s.V);
+    free_pml_variables(s.Psi);
+    free_pml_variables(s.Phi);
 }
 
 // global indexing, so this is used for wave variables: nonPML
@@ -196,8 +217,7 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
 }
 
 #define U(gcoords) U[gcoords_to_index(gcoords, dimensions)]
-#define U_prev(gcoords) U_prev[gcoords_to_index(gcoords, dimensions)]
-#define U_prev_prev(gcoords) U_prev_prev[gcoords_to_index(gcoords, dimensions)]
+#define V(gcoords) V[gcoords_to_index(gcoords, dimensions)]
 
 __global__ void emit_source(real_t *const U, const Dimensions dimensions, const real_t value) {
     // const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -387,7 +407,7 @@ __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
 
-    const real_t SIGMA = 1.0 / dimensions.dh;
+    const real_t SIGMA = 1.0;
 
     Dimensions adjusted_dim = dimensions;
     adjusted_dim.Nx += 2;
@@ -401,17 +421,14 @@ __device__ real_t get_sigma(const Coords gcoords,
     return 0.0;
 }
 
-
 #define tau(shift) (tau_shift(gcoords, shift, component, dimensions))
 #define K(gcoords) (get_K(gcoords, dimensions))
 #define Rho(gcoords) (get_rho(gcoords, dimensions))
 #define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
-#define Psi(gcoords) (get_PML_var(Psi, gcoords, component, dimensions))
-#define Psi_prev(gcoords) (get_PML_var(Psi_prev, gcoords, component, dimensions))
-#define Phi(gcoords) (get_PML_var(Phi, gcoords, component, dimensions))
-#define Phi_prev(gcoords) (get_PML_var(Phi_prev, gcoords, component, dimensions))
-#define set_Psi(value) (set_PML_var(Psi, value, gcoords, component, dimensions))
-#define set_Phi(value) (set_PML_var(Phi, value, gcoords, component, dimensions))
+#define Psi(S, gcoords) (get_PML_var(S.Psi, gcoords, component, dimensions))
+#define Phi(S, gcoords) (get_PML_var(S.Phi, gcoords, component, dimensions))
+#define set_Psi(S, value) (set_PML_var(S.Psi, value, gcoords, component, dimensions))
+#define set_Phi(S, value) (set_PML_var(S.Phi, value, gcoords, component, dimensions))
 
 __device__ Side get_side(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
@@ -588,222 +605,223 @@ __device__ bool in_bounds(const Coords gcoords, const Dimensions dimensions) {
     return true;
 }
 
-__device__ real_t gauss_seidel(const real_t *const U,
-                               const real_t *const U_prev,
-                               const real_t *const U_prev_prev,
-                               PML_Variable Psi,
-                               const PML_Variable Psi_prev,
-                               PML_Variable Phi,
-                               const PML_Variable Phi_prev,
-                               const Dimensions dimensions,
-                               const Coords gcoords) {
-    const real_t dt = dimensions.dt;
+// __global__ void var_density_solver(real_t *const U,
+//                                    const real_t *const U_prev,
+//                                    PML_Variable Psi,
+//                                    const PML_Variable Psi_prev,
+//                                    PML_Variable Phi,
+//                                    const PML_Variable Phi_prev,
+//                                    const Dimensions dimensions) {
+//     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+//     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+//     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    const real_t K = K(gcoords);
+//     const real_t dt = dimensions.dt;
 
-    real_t result = (2.0 * U_prev(gcoords) - U_prev_prev(gcoords)) / (dt * dt);
-    real_t constants = 1 / (dt * dt);
+//     Coords gcoords = Coords { i, j, k };
 
-    for(Component component = X; component < N_COMPONENTS; component++) {
-        const real_t dh = dimensions.dh;
+//     if(!in_bounds(gcoords, dimensions)) {
+//         return;
+//     }
 
-        real_t tau_m1 = U(tau(-1));
-        real_t tau_p1 = U(tau(+1));
+//     // update at position  (i,j,k)
+//     // U contains the prev prev value!
+//     real_t result = -U(gcoords) + 2 * U_prev(gcoords);
 
-        // update pml
+//     for(Component component = X; component < N_COMPONENTS; component++) {
+//         const real_t dh = dimensions.dh;
 
-        if(in_PML(gcoords, dimensions)) { // is it really always 0 outside this if ?
-            tau_m1 += -dh * sigma(tau(-1)) * Phi(tau(-1));
-            tau_p1 += dh * sigma(gcoords) * Psi(tau(+1));
+//         real_t pml1 = 0.0, pml2 = 0.0;
 
-            // computing next phi and psi
-            const real_t psi_value =
-                (-Psi(tau(+1)) * sigma(gcoords) / 2.0 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh)
-                 + Psi_prev(gcoords) / (dt * K))
-                / ((1.0 / (dt * K)) + (sigma(tau(-1)) / 2.0));
+//         if(in_PML(gcoords, dimensions)) {
+//             pml1 = dh * sigma(gcoords) * Psi_prev(tau(+1));
+//             pml2 = -dh * sigma(tau(-1)) * Phi_prev(tau(-1));
+//         }
 
-            const real_t phi_value =
-                (-Phi(tau(-1)) * sigma(tau(-1)) / 2.0 - (U(tau(+1)) - U(tau(-1))) / (2.0 * dh)
-                 + Phi_prev(gcoords) / (dt * K))
-                / ((1.0 / (dt * K)) + (sigma(gcoords) / 2.0));
+//         result += dt * dt / (dh * dh) * K(gcoords) * K(gcoords) * Rho(gcoords)
+//                 * (0.5 * (1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords))
+//                        * (U_prev(tau(+1)) + pml1 - U_prev(gcoords))
+//                    - 0.5 * (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
+//                          * (U_prev(gcoords) - U_prev(tau(-1)) - pml2));
+//     }
+//     U(gcoords) = result;
+// }
 
-            set_Phi(phi_value);
-            set_Psi(psi_value);
-        }
+// __global__ void pml_var_solver(real_t *const U_prev,
+//                                PML_Variable Psi,
+//                                const PML_Variable Psi_prev,
+//                                PML_Variable Phi,
+//                                const PML_Variable Phi_prev,
+//                                const Dimensions dimensions) {
+//     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+//     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+//     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
-        /*
-                real_t result =
-            (d_dt * d_dt)
-                * (2 * (-K(i - 1, j, k) / (2 * d_dx) + K(i + 1, j, k) / (2 * d_dx))
-                    * (-d_P(i - 1, j, k) / (2 * d_dx) + d_P(i + 1, j, k) / (2 * d_dx)) * K(i, j,
-           k)
-                + 2 * (-K(i, j - 1, k) / (2 * d_dy) + K(i, j + 1, k) / (2 * d_dy))
-                        * (-d_P(i, j - 1, k) / (2 * d_dy) + d_P(i, j + 1, k) / (2 * d_dy)) *
-           K(i, j, k)
-                + 2 * (-K(i, j, k - 1) / (2 * d_dz) + K(i, j, k + 1) / (2 * d_dz))
-                        * (-d_P(i, j, k - 1) / (2 * d_dz) + d_P(i, j, k + 1) / (2 * d_dz)) *
-           K(i, j, k)
-                + (-2 * d_P(i, j, k) / (d_dx * d_dx) + d_P(i - 1, j, k) / (d_dx * d_dx)
-                    + d_P(i + 1, j, k) / (d_dx * d_dx))
-                        * (K(i, j, k) * K(i, j, k))
-                + (-2 * d_P(i, j, k) / (d_dy * d_dy) + d_P(i, j - 1, k) / (d_dy * d_dy)
-                    + d_P(i, j + 1, k) / (d_dy * d_dy))
-                        * (K(i, j, k) * K(i, j, k))
-                + (-2 * d_P(i, j, k) / (d_dz * d_dz) + d_P(i, j, k - 1) / (d_dz * d_dz)
-                    + d_P(i, j, k + 1) / (d_dz * d_dz))
-                        * (K(i, j, k) * K(i, j, k))
-                + PML_val)
-            + 2 * d_P_prv(i, j, k) - d_P_prv_prv(i, j, k);
+//     Coords gcoords = Coords { i, j, k };
 
-        *///working K change. its the same !
+//     if(in_PML(gcoords, dimensions)) {
+//         const real_t dt = dimensions.dt;
 
-        // observations:
-        // 1. using the "correct" formula, the wave invert when it shouldnt
-        // 2. using the inverted formula, the pml doesnt explode at the changing boundary
-        // 3. with a strong PML, using a 0 speed explodes fast
+//         for(Component component = X; component < N_COMPONENTS; component++) {
+//             const real_t dh = dimensions.dh;
 
-        // -> something is seriously wrong with my formula, at the PML level and normal level
-        // (maybe)
+//             // I think are wrong: dt should multiply the whole, maybe K as well.
+//             // time indices it also  has a s_i, but that's soo wrong
+//             // using U_prev instead of U, I guess it makes sense
+//             real_t next_phi =
+//                 Phi_prev(gcoords)
+//                 - 0.5 * dt * K(gcoords)
+//                       * (sigma(tau(-1)) * Phi_prev(tau(-1)) + sigma(gcoords) * Phi_prev(gcoords))
+//                 - dt * K(gcoords) / (2.0 * dh) * (U_prev(tau(+1)) - U_prev(tau(-1)));
 
-        // operator
-        result += 0.5 * K / (dh * dh) * (K(tau(+1)) - K(tau(-1))) * (tau_p1 - tau_m1)
-                + K * K / (dh * dh) * (tau_m1 + tau_p1);
+//             real_t next_psi =
+//                 Psi_prev(gcoords)
+//                 - 0.5 * dt * K(gcoords)
+//                       * (sigma(tau(-1)) * Psi_prev(gcoords) + sigma(gcoords) * Psi_prev(tau(+1)))
+//                 - dt * K(gcoords) / (2.0 * dh) * (U_prev(tau(+1)) - U_prev(tau(-1)));
 
-        constants += 2.0 * K * K / (dh * dh);
-    }
+//             set_Phi(next_phi);
+//             set_Psi(next_psi);
+//         }
+//         // something is wrong. is it supposed to ripple like this ?
+//     }
+// }
 
-    result /= constants;
-    return result;
-}
-
-__global__ void gauss_seidel_red(real_t *const U,
-                                 const real_t *const U_prev,
-                                 const real_t *const U_prev_prev,
-                                 PML_Variable Psi,
-                                 const PML_Variable Psi_prev,
-                                 PML_Variable Phi,
-                                 const PML_Variable Phi_prev,
-                                 const Dimensions dimensions) {
+// performs Out = A + m*B for a whole simulation state
+// will not be optimized in  edge cases !
+__global__ void vectorized_add_mult(SimulationState Out,
+                                    SimulationState A,
+                                    real_t m,
+                                    SimulationState B,
+                                    Dimensions dimensions) {
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    int_t m = (i + j + 1) % 2;
-    int_t true_k = 2 * k + m;
-
-    const Coords gcoords = { .x = i, .y = j, .z = true_k };
-
-    if(!in_bounds(gcoords, dimensions))
-        return;
-
-    U(gcoords) =
-        gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
-}
-
-__global__ void gauss_seidel_black(real_t *const U,
-                                   const real_t *const U_prev,
-                                   const real_t *const U_prev_prev,
-                                   PML_Variable Psi,
-                                   const PML_Variable Psi_prev,
-                                   PML_Variable Phi,
-                                   const PML_Variable Phi_prev,
-                                   const Dimensions dimensions) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-
-    int_t m = (i + j) % 2;
-    int_t true_k = 2 * k + m;
-
-    const Coords gcoords = { .x = i, .y = j, .z = true_k };
-
-    if(!in_bounds(gcoords, dimensions))
-        return;
-
-    U(gcoords) =
-        gauss_seidel(U, U_prev, U_prev_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions, gcoords);
-}
-
-__global__ void var_density_solver(real_t *const U,
-                                   const real_t *const U_prev,
-                                   PML_Variable Psi,
-                                   const PML_Variable Psi_prev,
-                                   PML_Variable Phi,
-                                   const PML_Variable Phi_prev,
-                                   const Dimensions dimensions) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
-
-    const real_t dt = dimensions.dt;
-
-    Coords gcoords = Coords { i, j, k };
+    const Coords gcoords = { .x = i, .y = j, .z = k };
 
     if(!in_bounds(gcoords, dimensions)) {
         return;
     }
 
-    // update at position  (i,j,k)
-    // U contains the prev prev value!
-    real_t result = -U(gcoords) + 2 * U_prev(gcoords);
+    // add U and V
+    Out.U(gcoords) = A.U(gcoords) + m * B.U(gcoords);
+    Out.V(gcoords) = A.V(gcoords) + m * B.V(gcoords);
 
-    for(Component component = X; component < N_COMPONENTS; component++) {
-        const real_t dh = dimensions.dh;
-
-        real_t pml1 = 0.0, pml2 = 0.0;
-
-        if(in_PML(gcoords, dimensions)) {
-            pml1 = dh * sigma(gcoords) * Psi_prev(tau(+1));
-            pml2 = -dh * sigma(tau(-1)) * Phi_prev(tau(-1));
+    if(in_PML(gcoords, dimensions)) {
+        for(Component component = X; component < N_COMPONENTS; component++) {
+            real_t new_phi = Phi(A, gcoords) + m * Phi(B, gcoords);
+            set_Phi(Out, new_phi);
+            real_t new_psi = Psi(A, gcoords) + m * Psi(B, gcoords);
+            set_Psi(Out, new_psi);
         }
-
-        result += dt * dt / (dh * dh) * K(gcoords) * K(gcoords) * Rho(gcoords)
-                * (0.5 * (1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords))
-                       * (U_prev(tau(+1)) + pml1 - U_prev(gcoords))
-                   - 0.5 * (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
-                         * (U_prev(gcoords) - U_prev(tau(-1)) - pml2));
     }
-    U(gcoords) = result;
 }
 
-__global__ void pml_var_solver(real_t *const U_prev,
-                               PML_Variable Psi,
-                               const PML_Variable Psi_prev,
-                               PML_Variable Phi,
-                               const PML_Variable Phi_prev,
-                               const Dimensions dimensions) {
+// in the future, I can simply add the result to deriv, instead of overwriting it
+__global__ void
+euler_step(SimulationState deriv, const SimulationState state, Dimensions dimensions) {
+    // simply input the discretized side of my half-discretized equations
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    Coords gcoords = Coords { i, j, k };
+    const real_t dt = dimensions.dt;
+    const real_t dh = dimensions.dh;
 
-    if(in_PML(gcoords, dimensions)) {
-        const real_t dt = dimensions.dt;
+    const Coords gcoords = { .x = i, .y = j, .z = k };
 
-        for(Component component = X; component < N_COMPONENTS; component++) {
-            const real_t dh = dimensions.dh;
-
-            // I think are wrong: dt should multiply the whole, maybe K as well.
-            // time indices it also  has a s_i, but that's soo wrong
-            // using U_prev instead of U, I guess it makes sense
-            real_t next_phi =
-                Phi_prev(gcoords)
-                - 0.5 * dt * K(gcoords)
-                      * (sigma(tau(-1)) * Phi_prev(tau(-1)) + sigma(gcoords) * Phi_prev(gcoords))
-                - dt * K(gcoords) / (2.0 * dh) * (U_prev(tau(+1)) - U_prev(tau(-1)));
-
-            real_t next_psi =
-                Psi_prev(gcoords)
-                - 0.5 * dt * K(gcoords)
-                      * (sigma(tau(-1)) * Psi_prev(gcoords) + sigma(gcoords) * Psi_prev(tau(+1)))
-                - dt * K(gcoords) / (2.0 * dh) * (U_prev(tau(+1)) - U_prev(tau(-1)));
-
-            set_Phi(next_phi);
-            set_Psi(next_psi);
-        }
-        // something is wrong. is it supposed to ripple like this ?
+    if(!in_bounds(gcoords, dimensions)) {
+        return;
     }
+
+    // simply transfer v to du
+    deriv.U(gcoords) = state.V(gcoords);
+
+    // main computation, this is d²u/dv². first compute pml terms, then formula
+    real_t dv = 0.0;
+    for(Component component = X; component < N_COMPONENTS; component++) {
+        //
+        real_t pml1 = 0.0, pml2 = 0.0;
+
+        if(in_PML(gcoords, dimensions)) {
+            pml1 = dh * sigma(gcoords) * Psi(state, tau(+1));
+            pml2 = -dh * sigma(tau(-1)) * Phi(state, tau(-1));
+
+            // also update the PML while I'm here
+            real_t dphi = Phi(state, gcoords)
+                        - K(gcoords) / (2.0 * dh)
+                              * (sigma(tau(-1)) * Phi(state, tau(-1))
+                                 + sigma(gcoords) * Phi(state, gcoords))
+                        - K(gcoords) / (2.0 * dh) * (state.U(tau(+1)) - state.U(tau(-1)));
+
+            real_t dpsi = Psi(state, gcoords)
+                        - K(gcoords) / (2.0 * dh)
+                              * (sigma(tau(-1)) * Psi(state, gcoords)
+                                 + sigma(gcoords) * Psi(state, tau(+1)))
+                        - K(gcoords) / (2.0 * dh) * (state.U(tau(+1)) - state.U(tau(-1)));
+
+            set_Phi(deriv, dphi);
+            set_Psi(deriv, dpsi);
+        }
+
+        dv += K(gcoords) * K(gcoords) * Rho(gcoords) * (2.0 * dh * dh)
+            * ((1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords))
+                   * (state.U(tau(+1)) + pml1 - state.U(gcoords))
+               - (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
+                     * (state.U(gcoords) - state.U(tau(-1)) - pml2));
+    }
+
+    deriv.V(gcoords) = dv;
+}
+
+// updates the value in current
+__host__ void RK4_step(SimulationState current,
+                       SimulationState tmp,
+                       SimulationState K1,
+                       SimulationState K2,
+                       SimulationState K3,
+                       SimulationState K4,
+                       Dimensions dimensions) {
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const real_t dt = dimensions.dt;
+
+    int block_x = 8;
+    int block_y = 8;
+    int block_z = 8;
+    dim3 block(block_x, block_y, block_z);
+    dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
+              (Ny + 2 * padding + block_y - 1) / block_y,
+              ((Nz + 2 * padding) + block_z - 1) / block_z);
+
+    // tmp serves as containing the parameter I'll pass to f, so that I can do some adding and
+    // multiplying before passing
+
+    // 1. K1 = f(current)
+    euler_step<<<grid, block>>>(current, K1, dimensions);
+
+    // 2. K2 = f(current + dt * K1/2)
+    vectorized_add_mult<<<grid, block>>>(tmp, current, dt / 2.0, K1, dimensions);
+    euler_step<<<grid, block>>>(K2, tmp, dimensions);
+
+    // 3. K3 = f(current + dt * K2/2)
+    vectorized_add_mult<<<grid, block>>>(tmp, current, dt / 2.0, K2, dimensions);
+    euler_step<<<grid, block>>>(K3, tmp, dimensions);
+
+    // 4. K4 = f(current + dt * K4)
+    vectorized_add_mult<<<grid, block>>>(tmp, current, dt, K3, dimensions);
+    euler_step<<<grid, block>>>(K4, tmp, dimensions);
+
+    // 5. next = Y + dt*K1/6 + dt*K2/3 + dt*K3/3 + dt*K4/6
+    vectorized_add_mult<<<grid, block>>>(current, current, dt / 6.0, K1, dimensions);
+    vectorized_add_mult<<<grid, block>>>(current, current, dt / 3.0, K2, dimensions);
+    vectorized_add_mult<<<grid, block>>>(current, current, dt / 3.0, K3, dimensions);
+    vectorized_add_mult<<<grid, block>>>(current, current, dt / 6.0, K4, dimensions);
 }
 
 void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
@@ -922,13 +940,15 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         exit(EXIT_FAILURE);
     }
 
-    PML_Variable Psi = allocate_pml_variables(dimensions);
-    PML_Variable Phi = allocate_pml_variables(dimensions);
-    PML_Variable Psi_prev = allocate_pml_variables(dimensions);
-    PML_Variable Phi_prev = allocate_pml_variables(dimensions);
+    SimulationState currentState = allocate_simulation_state(dimensions);
 
-    real_t *U = allocate_domain(dimensions);
-    real_t *U_prev = allocate_domain(dimensions);
+    SimulationState tmp = allocate_simulation_state(dimensions);
+    SimulationState K1 = allocate_simulation_state(dimensions);
+    SimulationState K2 = allocate_simulation_state(dimensions);
+    SimulationState K3 = allocate_simulation_state(dimensions);
+    SimulationState K4 = allocate_simulation_state(dimensions);
+
+    // SimulationState nextState = allocate_simulation_state(dimensions);
 
     FILE *output_buffer = fopen("sensor_out/dest_wave.dat", "w");
 
@@ -945,10 +965,10 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         if((iteration % snapshot_freq) == 0) {
             printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();
-            domain_save(U, dimensions);
+            domain_save(currentState.U, dimensions);
         }
 
-        get_recv(U, output_buffer, dimensions);
+        get_recv(currentState.U, output_buffer, dimensions);
 
         int block_x = 8;
         int block_y = 8;
@@ -958,7 +978,12 @@ extern "C" int simulate_wave(const simulation_parameters p) {
                   (Ny + 2 * padding + block_y - 1) / block_y,
                   ((Nz + 2 * padding) + block_z - 1) / block_z);
 
-        var_density_solver<<<grid, block>>>(U, U_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions);
+        RK4_step(currentState, tmp, K1, K2, K3, K4, dimensions);
+        cudaError_t err = cudaGetLastError();
+        if(err != cudaSuccess) {
+            printf("cuda kernel error: %s\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
 
         real_t src_freq = 1.0e6;
         real_t src_sampling_rate = 8 * src_freq;
@@ -967,27 +992,14 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
         if(signature_idx < sig_len) {
             real_t src_value = sig[signature_idx];
-            emit_source<<<1, 1>>>(U, dimensions, src_value);
+            emit_source<<<1, 1>>>(currentState.U, dimensions, src_value);
         }
 
-        cudaError_t err = cudaGetLastError();
-        if(err != cudaSuccess) {
-            printf("cuda kernel error: %s\n", cudaGetErrorString(err));
-            exit(EXIT_FAILURE);
-        }
-
-        pml_var_solver<<<grid, block>>>(U_prev, Psi, Psi_prev, Phi, Phi_prev, dimensions);
-
-        err = cudaGetLastError();
-        if(err != cudaSuccess) {
-            printf("cuda kernel error: %s\n", cudaGetErrorString(err));
-            exit(EXIT_FAILURE);
-        }
         // show_sigma<<<grid, block>>>(dimensions, U, U_prev);
 
-        move_buffer_window(&U, &U_prev);
-        swap_aux_variables(&Psi, &Psi_prev);
-        swap_aux_variables(&Phi, &Phi_prev);
+        // move_buffer_window(&U, &U_prev);
+        // swap_aux_variables(&Psi, &Psi_prev);
+        // swap_aux_variables(&Phi, &Phi_prev);
     }
     cudaDeviceSynchronize();
 
@@ -999,13 +1011,12 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     printf("time taken: %lf sec, %lf per iteration\n", diff, diff / max_iteration);
 
-    free_domain(U);
-    free_domain(U_prev);
-
-    free_pml_variables(Psi);
-    free_pml_variables(Phi);
-    free_pml_variables(Psi_prev);
-    free_pml_variables(Phi_prev);
+    free_simulation_state(currentState);
+    free_simulation_state(tmp);
+    free_simulation_state(K1);
+    free_simulation_state(K2);
+    free_simulation_state(K3);
+    free_simulation_state(K4);
 
     return 0;
 }

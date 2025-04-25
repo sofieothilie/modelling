@@ -28,8 +28,8 @@ debug: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/simulation.cu
 	@echo "Debug Compilation Successful"
 
 console: 
-	mkdir -p wave_data
-	./bin/modeling_cmd -x 0.03 -y 0.03 -z 0.05 -h 0.00015 -t 3.5e-8 -i 500 -s 5
+	@mkdir -p wave_data
+	./bin/modeling_cmd -x 0.001 -y 0.001 -z 0.001 -h 0.00010 -t 1e-8 -i 100 -s 1
 
 
 test: clear build console plot movie

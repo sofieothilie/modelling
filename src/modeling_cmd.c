@@ -16,7 +16,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    printf("allocate %lu bytes\n", MODEL_Nx * MODEL_Ny * sizeof(double));
     double *model = calloc(MODEL_Nx * MODEL_Ny, sizeof(double));
 
     if(model == NULL) {
@@ -24,7 +23,6 @@ int main(int argc, char **argv) {
         fclose(model_file);
         return 1;
     }
-    printf("alloced memory, at %p\n", model);
 
     // Read the binary data into the array
     size_t read_size = fread(model, sizeof(double), 1, model_file);
