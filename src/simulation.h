@@ -21,6 +21,9 @@ typedef struct {
     int max_iter, snapshot_freq;
 } simulation_parameters;
 
+#define SRC_FREQUENCY 1e6
+#define SRC_SAMPLE_RATE 8*SRC_FREQUENCY
+
 #ifdef __cplusplus
 extern "C" {
 #endif

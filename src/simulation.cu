@@ -219,7 +219,7 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
 #define U(gcoords) U[gcoords_to_index(gcoords, dimensions)]
 #define V(gcoords) V[gcoords_to_index(gcoords, dimensions)]
 
-__global__ void emit_source(real_t *const U, const Dimensions dimensions, const real_t value) {
+__global__ void emit_source(real_t *const U, real_t *const Un, const Dimensions dimensions, const real_t value) {
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -228,43 +228,45 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
+    const real_t dh = dimensions.dh;
 
     int n_source = 7;
     int spacing = 2; // spacing in terms of cells, not distance
 
     // const double freq = 1.0e6; // 1MHz
 
-    // // grid of sources over yz plane, at x = 5 maybe
-    for(int n_i = 0; n_i < n_source; n_i++) {
-        for(int n_j = 0; n_j < n_source; n_j++) {
-            int idx_i = padding + Nx / 2 - (n_source / 2 * spacing) + n_i * spacing;
-            int idx_j = padding + Ny / 2 - (n_source / 2 * spacing) + n_j * spacing;
+    // // // grid of sources over yz plane, at x = 5 maybe
+    // for(int n_i = 0; n_i < n_source; n_i++) {
+    //     for(int n_j = 0; n_j < n_source; n_j++) {
+    //         int idx_i = padding + Nx / 2 - (n_source / 2 * spacing) + n_i * spacing;
+    //         int idx_j = padding + Ny / 2 - (n_source / 2 * spacing) + n_j * spacing;
 
-            double shift = 0;
-            // (double) n_j / n_source * 2 * M_PI * 0.7;
-            // double sine = sin(2 * M_PI * t * freq - shift);
+    //         double shift = 0;
+    //         // (double) n_j / n_source * 2 * M_PI * 0.7;
+    //         // double sine = sin(2 * M_PI * t * freq - shift);
 
-            const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
+    //         const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
 
-            U(gcoords) = value;
-        }
-    }
+    //         U(gcoords) = value;
+    //     }
+    // }
 
-    // Coords gcoords = { i, j, k };
+    Coords gcoords = { i, j, k };
 
     // const Coords emit_coords = { .x = padding + Nx / 2,
     //                              .y = padding + Ny / 2,
     //                              .z = padding + Nz / 2 };
     // // const double freq = 1e3;
-    // real_t x = (i-padding)*dh;
-    // real_t y = (j-padding)*dh;
-    // real_t cx = 1, cy = 1;
-    // if(k == padding && i >= padding && i < padding  + Nx && j >= padding && j < padding + Ny) {
-    //     real_t delta = 
-    //         ((x - cx) * (x - cx)
-    //         + (y - cy) * (y - cy));
-    //     U(gcoords) = exp(-200.0 * delta);
-    // }
+    real_t x = (i - padding - Nx/2) * dh;
+    real_t y = (j - padding - Ny/2) * dh;
+    real_t z = (k - padding - Nz/2) * dh;
+
+    real_t cx = 0, cy = 0;
+     if(k >= padding && k < padding + Nz && i >= padding && i < padding  + Nx && j >= padding && j < padding + Ny)
+    {
+        real_t delta = ((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z*z));
+        U(gcoords) = Un[gcoords_to_index(gcoords, dimensions)] = exp(-4000000.0 * delta);
+    }
 }
 
 void get_recv(const real_t *d_buffer, FILE *output, Dimensions dimensions) {
@@ -383,7 +385,7 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
 
     // return 1.0;
 
-    // return WATER_K;
+    return WATER_K;
 
     if(k < padding + 5 * Nz / 6)
         return WATER_K;
@@ -404,7 +406,7 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_RHO = 997.0;
     const real_t PLASTIC_RHO = 1185.0;
 
-    // return WATER_RHO;
+    return WATER_RHO;
     // return 1.0;
 
     if(k < padding + 5 * Nz / 6)
@@ -437,13 +439,7 @@ __device__ real_t get_sigma(const Coords gcoords,
 
     const real_t SIGMA = 2.0;
 
-    Dimensions adjusted_dim = dimensions;
-    adjusted_dim.Nx += 2;
-    adjusted_dim.Ny += 2;
-    adjusted_dim.Nz += 2;
-    adjusted_dim.padding -= 1;
-
-    if(!in_PML(gcoords, adjusted_dim))
+    if(!in_PML(gcoords, dimensions))
         return 0.0;
 
     if(border_match_component(gcoords, dimensions, component)) {
@@ -618,6 +614,12 @@ void swap_aux_variables(PML_Variable *u, PML_Variable *v) {
     *v = temp;
 }
 
+void shift_states(SimulationState *current, SimulationState *next) {
+    SimulationState temp = *current;
+    *current = *next;
+    *next = temp;
+}
+
 __device__ bool in_bounds(const Coords gcoords, const Dimensions dimensions) {
     const int_t i = gcoords.x;
     const int_t j = gcoords.y;
@@ -750,7 +752,64 @@ __global__ void vectorized_add_mult(SimulationState Out,
     }
 }
 
-// in the future, I can simply add the result to deriv, instead of overwriting it
+// this is wrong, idk where
+__global__ void vectorized_add_mult2(SimulationState Out,
+                                     SimulationState A,
+                                     real_t m,
+                                     SimulationState B,
+                                     real_t n,
+                                     SimulationState C,
+                                     Dimensions dimensions) {
+    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    const Coords gcoords = { .x = i, .y = j, .z = k };
+
+    if(!in_bounds(gcoords, dimensions)) {
+        return;
+    }
+
+    // add U and V
+    Out.U(gcoords) = A.U(gcoords) + m * B.U(gcoords) + n * C.U(gcoords);
+    Out.V(gcoords) = A.V(gcoords) + m * B.V(gcoords) + n * C.U(gcoords);
+
+    if(in_PML(gcoords, dimensions)) {
+        for(Component component = X; component < N_COMPONENTS; component++) {
+            real_t new_phi = Phi(A, gcoords) + m * Phi(B, gcoords) + n * Phi(C, gcoords);
+            set_Phi(Out, new_phi);
+            real_t new_psi = Psi(A, gcoords) + m * Psi(B, gcoords) + n * Psi(C, gcoords);
+            set_Psi(Out, new_psi);
+        }
+    }
+}
+
+__global__ void
+vectorized_mult(SimulationState Out, real_t m, SimulationState B, Dimensions dimensions) {
+    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    const Coords gcoords = { .x = i, .y = j, .z = k };
+
+    if(!in_bounds(gcoords, dimensions)) {
+        return;
+    }
+
+    // add U and V
+    Out.U(gcoords) = m * B.U(gcoords);
+    Out.V(gcoords) = m * B.V(gcoords);
+
+    if(in_PML(gcoords, dimensions)) {
+        for(Component component = X; component < N_COMPONENTS; component++) {
+            real_t new_phi = m * Phi(B, gcoords);
+            set_Phi(Out, new_phi);
+            real_t new_psi = m * Psi(B, gcoords);
+            set_Psi(Out, new_psi);
+        }
+    }
+}
+
 __global__ void
 euler_step(SimulationState deriv, const SimulationState state, Dimensions dimensions) {
     // simply input the discretized side of my half-discretized equations
@@ -812,6 +871,7 @@ euler_step(SimulationState deriv, const SimulationState state, Dimensions dimens
 }
 
 // updates the value in current
+// 4  euler-steps, 7 add-mult
 __host__ void RK4_step(SimulationState current,
                        SimulationState tmp,
                        SimulationState K1,
@@ -859,6 +919,67 @@ __host__ void RK4_step(SimulationState current,
     vectorized_add_mult<<<grid, block>>>(current, current, dt / 3.0, K2, dimensions);
     vectorized_add_mult<<<grid, block>>>(current, current, dt / 3.0, K3, dimensions);
     vectorized_add_mult<<<grid, block>>>(current, current, dt / 6.0, K4, dimensions);
+}
+
+// profile this !  see how much euler step and the add-mult costs
+
+// + combine kernels  into more complex ones is quite faster !
+
+//!! can be done  with lower storage, but more operations !!!
+// 4 euler-steps, 6 add-mult,  2 mult
+__host__ void RK4_step_lowstorage(SimulationState current,
+                                  SimulationState inter,
+                                  SimulationState next,
+                                  Dimensions dimensions) {
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+
+    const real_t dt = dimensions.dt;
+
+    int block_x = 8;
+    int block_y = 8;
+    int block_z = 8;
+    dim3 block(block_x, block_y, block_z);
+    dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
+              (Ny + 2 * padding + block_y - 1) / block_y,
+              ((Nz + 2 * padding) + block_z - 1) / block_z);
+
+    // 1. next <- f(current)
+    euler_step<<<grid, block>>>(next, current, dimensions);
+
+    // 2. inter <- f(next)
+    euler_step<<<grid, block>>>(inter, next, dimensions);
+
+    // 3. inter <- 1/4*dt² * inter +  1/2*dt*next  + current
+    vectorized_mult<<<grid, block>>>(inter, 0.25 * dt * dt, inter, dimensions);
+    vectorized_add_mult<<<grid, block>>>(inter, inter, 0.5 * dt, next, dimensions);
+    vectorized_add_mult<<<grid, block>>>(inter, inter, 1.0, current, dimensions);
+
+    // 4. next <- 1/3*dt*next + 1/3*current + 2/3*inter
+    vectorized_mult<<<grid, block>>>(next, 1.0 / 3.0 * dt, next, dimensions);
+    vectorized_add_mult<<<grid, block>>>(next, next, 1.0 / 3.0, current, dimensions);
+    vectorized_add_mult<<<grid, block>>>(next, next, 2.0 / 3.0, inter, dimensions);
+
+    // vectorized_add_mult2<<<grid, block>>>(next,
+    //                                       next,
+    //                                       1.0 / 3.0,
+    //                                       current,
+    //                                       2.0 / 3.0,
+    //                                       inter,
+    //                                       dimensions);
+
+    // 4. current <- f(inter)
+    euler_step<<<grid, block>>>(current, inter, dimensions);
+
+    // 4.5. inter <- f(current) note this is not necessary, and could directly be added to the next
+    // but I was too lazy to write a new kernel that adds instead of overwrite
+    euler_step<<<grid, block>>>(inter, current, dimensions);
+
+    // 5. next <- next + 1/3*dt*current + 1/6dt² * inter
+    vectorized_add_mult<<<grid, block>>>(next, next, 1.0 / 3.0 * dt, current, dimensions);
+    vectorized_add_mult<<<grid, block>>>(next, next, 1.0 / 6.0 * dt * dt, inter, dimensions);
 }
 
 void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
@@ -951,6 +1072,15 @@ int signature(real_t **sig_buf) {
     return (int) num_doubles;
 }
 
+__global__ void show_sigma(Dimensions dimensions, real_t *U, real_t *U_prev) {
+    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+    const Coords gcoords = { .x = i, .y = j, .z = k };
+
+    U(gcoords) = U_prev[gcoords_to_index(gcoords, dimensions)] = get_sigma(gcoords, dimensions, Z);
+}
+
 extern "C" int simulate_wave(const simulation_parameters p) {
     const real_t dt = p.dt;
     const int_t max_iteration = p.max_iter;
@@ -977,15 +1107,18 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         exit(EXIT_FAILURE);
     }
 
+    // SimulationState currentState = allocate_simulation_state(dimensions);
+    // SimulationState tmp = allocate_simulation_state(dimensions);
+    // SimulationState K1 = allocate_simulation_state(dimensions);
+    // SimulationState K2 = allocate_simulation_state(dimensions);
+    // SimulationState K3 = allocate_simulation_state(dimensions);
+    // SimulationState K4 = allocate_simulation_state(dimensions);
+
+    // I can maybe do it with one less state but it will require some recomputations.
+    // I can also reduce the space by using the redundancy of v = du
     SimulationState currentState = allocate_simulation_state(dimensions);
-
-    SimulationState tmp = allocate_simulation_state(dimensions);
-    SimulationState K1 = allocate_simulation_state(dimensions);
-    SimulationState K2 = allocate_simulation_state(dimensions);
-    SimulationState K3 = allocate_simulation_state(dimensions);
-    SimulationState K4 = allocate_simulation_state(dimensions);
-
-    // SimulationState nextState = allocate_simulation_state(dimensions);
+    SimulationState intermediateState = allocate_simulation_state(dimensions);
+    SimulationState nextState = allocate_simulation_state(dimensions);
 
     FILE *output_buffer = fopen("sensor_out/dest_wave.dat", "w");
 
@@ -1007,8 +1140,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
         get_recv(currentState.U, output_buffer, dimensions);
 
-
-        RK4_step(currentState, tmp, K1, K2, K3, K4, dimensions);
+        // RK4_step(currentState, tmp, K1, K2, K3, K4, dimensions);
+        RK4_step_lowstorage(currentState, intermediateState, nextState, dimensions);
         cudaError_t err = cudaGetLastError();
         if(err != cudaSuccess) {
             printf("cuda kernel error: %s\n", cudaGetErrorString(err));
@@ -1020,12 +1153,22 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
         int signature_idx = (int) (iteration * dt * src_sampling_rate);
 
-        if(signature_idx < sig_len) {
+        int block_x = 8;
+        int block_y = 8;
+        int block_z = 8;
+        dim3 block(block_x, block_y, block_z);
+        dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
+                  (Ny + 2 * padding + block_y - 1) / block_y,
+                  ((Nz + 2 * padding) + block_z - 1) / block_z);
+
+        if(iteration == 0 && signature_idx < sig_len / 100) {
             real_t src_value = sig[signature_idx];
-            emit_source<<<1, 1>>>(currentState.U, dimensions, src_value);
+            emit_source<<<grid, block>>>(currentState.U,  nextState.U, dimensions, src_value);
         }
 
-        // show_sigma<<<grid, block>>>(dimensions, U, U_prev);
+        // show_sigma<<<grid, block>>>(dimensions, currentState.U, nextState.U);
+
+        shift_states(&currentState, &nextState);
 
         // move_buffer_window(&U, &U_prev);
         // swap_aux_variables(&Psi, &Psi_prev);
@@ -1041,12 +1184,16 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     printf("time taken: %lf sec, %lf per iteration\n", diff, diff / max_iteration);
 
+    // free_simulation_state(currentState);
+    // free_simulation_state(tmp);
+    // free_simulation_state(K1);
+    // free_simulation_state(K2);
+    // free_simulation_state(K3);
+    // free_simulation_state(K4);
+
     free_simulation_state(currentState);
-    free_simulation_state(tmp);
-    free_simulation_state(K1);
-    free_simulation_state(K2);
-    free_simulation_state(K3);
-    free_simulation_state(K4);
+    free_simulation_state(intermediateState);
+    free_simulation_state(nextState);
 
     return 0;
 }
