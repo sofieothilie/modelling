@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
             .Nx = Nx,
             .Ny = Ny,
             .Nz = Nz,
-            .padding = 5,
+            .padding = 10,
             .dh = options->dh,
             .dt = options->dt,
         },

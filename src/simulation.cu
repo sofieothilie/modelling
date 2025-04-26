@@ -383,7 +383,7 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
 
     // return 1.0;
 
-    return WATER_K;
+    // return WATER_K;
 
     if(k < padding + 5 * Nz / 6)
         return WATER_K;
@@ -404,7 +404,7 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_RHO = 997.0;
     const real_t PLASTIC_RHO = 1185.0;
 
-    return WATER_RHO;
+    // return WATER_RHO;
     // return 1.0;
 
     if(k < padding + 5 * Nz / 6)
@@ -412,12 +412,30 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
 
     return PLASTIC_RHO;
 }
+// will tell if sigma is on, depending on the component and the position
+__device__ bool border_match_component(const Coords gcoords,
+                                       const Dimensions dimensions,
+                                       const Component component) {
+    switch(component) {
+        case X:
+            return gcoords.x < dimensions.padding - 1
+                || gcoords.x > dimensions.Nx + dimensions.padding;
+
+        case Y:
+            return gcoords.y < dimensions.padding - 1
+                || gcoords.y > dimensions.Ny + dimensions.padding;
+
+        case Z:
+            return gcoords.z < dimensions.padding - 1
+                || gcoords.z > dimensions.Nz + dimensions.padding;
+    }
+}
 
 __device__ real_t get_sigma(const Coords gcoords,
                             const Dimensions dimensions,
                             const Component component) {
 
-    const real_t SIGMA = 1.0;
+    const real_t SIGMA = 2.0;
 
     Dimensions adjusted_dim = dimensions;
     adjusted_dim.Nx += 2;
@@ -425,8 +443,12 @@ __device__ real_t get_sigma(const Coords gcoords,
     adjusted_dim.Nz += 2;
     adjusted_dim.padding -= 1;
 
-    if(in_PML(gcoords, adjusted_dim))
+    if(!in_PML(gcoords, adjusted_dim))
+        return 0.0;
+
+    if(border_match_component(gcoords, dimensions, component)) {
         return SIGMA;
+    }
 
     return 0.0;
 }

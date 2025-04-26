@@ -1,0 +1,59 @@
+From baa4d2665a68e09042ec0dda372ef7261b4819db Mon Sep 17 00:00:00 2001
+From: Guillaume Carraux <guillaumecarr1@gmail.com>
+Date: Sat, 26 Apr 2025 13:13:23 +0200
+Subject: [PATCH] solved pml bug
+
+---
+ src/simulation.cu | 24 +++++++++++++++++++++---
+ 1 file changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/src/simulation.cu b/src/simulation.cu
+index 3bbc78a..8a4f6f4 100644
+--- a/src/simulation.cu
++++ b/src/simulation.cu
+@@ -346,12 +346,30 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
+ 
+     return PLASTIC_RHO;
+ }
++// will tell if sigma is on, depending on the component and the position
++__device__ bool border_match_component(const Coords gcoords,
++                                       const Dimensions dimensions,
++                                       const Component component) {
++    switch(component) {
++        case X:
++            return gcoords.x < dimensions.padding - 1
++                || gcoords.x > dimensions.Nx + dimensions.padding;
++
++        case Y:
++            return gcoords.y < dimensions.padding - 1
++                || gcoords.y > dimensions.Ny + dimensions.padding;
++
++        case Z:
++            return gcoords.z < dimensions.padding - 1
++                || gcoords.z > dimensions.Nz + dimensions.padding;
++    }
++}
+ 
+ __device__ real_t get_sigma(const Coords gcoords,
+                             const Dimensions dimensions,
+                             const Component component) {
+ 
+-    const real_t SIGMA = 1.0 / dimensions.dh[component];
++    const real_t SIGMA = 2.0 / dimensions.dh[0];
+ 
+     Dimensions adjusted_dim = dimensions;
+     adjusted_dim.Nx += 2;
+@@ -359,8 +377,8 @@ __device__ real_t get_sigma(const Coords gcoords,
+     adjusted_dim.Nz += 2;
+     adjusted_dim.padding -= 1;
+ 
+-    if(in_PML(gcoords, adjusted_dim))
+-        return SIGMA;
++    if(!in_PML(gcoords, adjusted_dim))
++        return 0.0;
+ 
+     return 0.0;
+ }
+-- 
+2.30.2
+

@@ -1,5 +1,7 @@
 wave_data
 wave_images
+ml_wave*
+movies_ml
 cuda_build
 *.ipynb
 
