@@ -244,21 +244,27 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
             // (double) n_j / n_source * 2 * M_PI * 0.7;
             // double sine = sin(2 * M_PI * t * freq - shift);
 
-            const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
+    //         const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + Nz/2 };
 
-            U(gcoords) = value;
-        }
-    }
-
-    // if(t==0) {
-    //     real_t delta = sqrt(((i - emit_coords.x) * (i - emit_coords.x))
-    //                             / (real_t)(0.5 * (Nx + padding * 2))
-    //                         + ((j - emit_coords.y) * (j - emit_coords.y))
-    //                               / (real_t)(0.5 * (Ny + padding * 2))
-    //                         + ((k -  emit_coords.z) * (k - emit_coords.z))
-    //                               / (real_t)(0.5 * (Nz + padding * 2)));
-    //     U_prev(gcoords) = U(gcoords) = exp(-t*freq*t*freq)*exp(-4.0 * delta * delta);
+    //         U(gcoords) = value;
+    //     }
     // }
+
+    Coords gcoords = { i, j, k };
+
+    const Coords emit_coords = { .x = padding + Nx / 2,
+                                 .y = padding + Ny / 2,
+                                 .z = padding + Nz / 2 };
+    // const double freq = 1e3;
+    real_t x = (i-padding)*dh;
+    real_t y = (j-padding)*dh;
+    real_t cx = 1, cy = 1;
+    if(k == padding && i >= padding && i < padding  + Nx && j >= padding && j < padding + Ny) {
+        real_t delta = 
+            ((x - cx) * (x - cx)
+            + (y - cy) * (y - cy));
+        U(gcoords) = exp(-200.0 * delta);
+    }
 }
 
 void get_recv(const real_t *d_buffer, FILE *output, Dimensions dimensions) {
@@ -374,6 +380,8 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_K = 1500.0;
     const real_t PLASTIC_K = 2270.0;
 
+    return 1.0;
+
     // return WATER_K;
 
     if(k < padding + 5 * Nz / 6)
@@ -395,7 +403,7 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
     const real_t WATER_RHO = 997.0;
     const real_t PLASTIC_RHO = 1185.0;
 
-    // return 0;
+    return 1.0;
 
     if(k < padding + 5 * Nz / 6)
         return WATER_RHO;
@@ -729,6 +737,10 @@ euler_step(SimulationState deriv, const SimulationState state, Dimensions dimens
     const real_t dt = dimensions.dt;
     const real_t dh = dimensions.dh;
 
+    int_t Nx = dimensions.Nx;
+    int_t Ny = dimensions.Ny;
+    int_t Nz = dimensions.Nz;
+
     const Coords gcoords = { .x = i, .y = j, .z = k };
 
     if(!in_bounds(gcoords, dimensions)) {
@@ -745,8 +757,8 @@ euler_step(SimulationState deriv, const SimulationState state, Dimensions dimens
         real_t pml1 = 0.0, pml2 = 0.0;
 
         if(in_PML(gcoords, dimensions)) {
-            pml1 = dh * sigma(gcoords) * Psi(state, tau(+1));
-            pml2 = -dh * sigma(tau(-1)) * Phi(state, tau(-1));
+            pml1 = sigma(gcoords) * Psi(state, tau(+1));
+            pml2 = -1 * sigma(tau(-1)) * Phi(state, tau(-1));
 
             // also update the PML while I'm here
             real_t dphi = Phi(state, gcoords)
@@ -765,7 +777,7 @@ euler_step(SimulationState deriv, const SimulationState state, Dimensions dimens
             set_Psi(deriv, dpsi);
         }
 
-        dv += K(gcoords) * K(gcoords) * Rho(gcoords) * (2.0 * dh * dh)
+        dv += K(gcoords) * K(gcoords) * Rho(gcoords) / (2.0 * dh * dh)
             * ((1.0 / Rho(tau(+1)) + 1.0 / Rho(gcoords))
                    * (state.U(tau(+1)) + pml1 - state.U(gcoords))
                - (1.0 / Rho(gcoords) + 1.0 / Rho(tau(-1)))
@@ -803,7 +815,8 @@ __host__ void RK4_step(SimulationState current,
     // multiplying before passing
 
     // 1. K1 = f(current)
-    euler_step<<<grid, block>>>(current, K1, dimensions);
+    euler_step<<<grid, block>>>(K1, current, dimensions);
+    // vectorized_add_mult<<<grid, block>>>(current, K1, dt, K1, dimensions);
 
     // 2. K2 = f(current + dt * K1/2)
     vectorized_add_mult<<<grid, block>>>(tmp, current, dt / 2.0, K1, dimensions);
@@ -962,6 +975,21 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     gettimeofday(&start, NULL);
 
     for(int_t iteration = 0; iteration < max_iteration; iteration++) {
+        int block_x = 8;
+        int block_y = 8;
+        int block_z = 8;
+        dim3 block(block_x, block_y, block_z);
+        dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
+                  (Ny + 2 * padding + block_y - 1) / block_y,
+                  ((Nz + 2 * padding) + block_z - 1) / block_z);
+
+        if(iteration == 0 ) {
+            // real_t src_value = sig[signature_idx];
+            emit_source<<<grid, block>>>(currentState.U, dimensions, 0);
+        }
+
+
+
         if((iteration % snapshot_freq) == 0) {
             printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();

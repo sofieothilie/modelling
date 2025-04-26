@@ -17,7 +17,7 @@ movie:
 
 
 
-NVCC_FLAGS =  -O3 -Wno-deprecated-gpu-targets -I./src
+NVCC_FLAGS =  -O3 -Wno-deprecated-gpu-targets   -I./src
 
 build: src/argument_utils.c src/modeling_cmd.c src/getopt.c src/simulation.cu
 	nvcc $(NVCC_FLAGS) $^ -o  bin/modeling_cmd
