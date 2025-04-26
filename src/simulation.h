@@ -47,8 +47,6 @@ typedef struct {
     int_t z;
 } Coords;
 
-#define SRC_FREQUENCY 1e6
-#define SRC_SAMPLE_RATE 8 * SRC_FREQUENCY
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,3 +60,12 @@ void free_simulation_state(SimulationState s);
 #ifdef __cplusplus
 }
 #endif
+
+#define WATER_K ((real_t)1500.0)
+#define WATER_RHO ((real_t)998.0)
+
+#define PLASTIC_K  ((real_t)2270.0)
+#define PLASTIC_RHO ((real_t)1185.0)
+
+#define SRC_FREQUENCY ((real_t)1.0e6)
+#define SRC_SAMPLE_RATE ((real_t)(8.0 * SRC_FREQUENCY))

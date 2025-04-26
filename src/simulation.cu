@@ -213,8 +213,6 @@ __device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
     // const int_t j = gcoords.y;
     const int_t k = gcoords.z;
 
-    const real_t WATER_K = 1500.0;
-    const real_t PLASTIC_K = 2270.0;
 
     // return 1.0;
 
@@ -236,8 +234,6 @@ __device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
     // const int_t j = gcoords.y;
     const int_t k = gcoords.z;
 
-    const real_t WATER_RHO = 997.0;
-    const real_t PLASTIC_RHO = 1185.0;
 
     return WATER_RHO;
     // return 1.0;
@@ -733,7 +729,7 @@ void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
     for(int k = 0; k < Nz + 2 * padding; k++) {
         int i;
         for(i = 0; i < Nx + 2 * padding - 1; i++) {
-            const Coords gcoords = { .x = i, .y = k, .z = j };
+            const Coords gcoords = { .x = i, .y = j, .z = k };
             const int w =
                 fprintf(out, "%.16lf ", (h_buffer[gcoords_to_index(gcoords, dimensions)]));
             if(w < 0)
@@ -825,9 +821,12 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     const int_t padding = dimensions.padding;
     // const real_t dh = dimensions.dh;
 
+    printf("dh = %lf\n", dimensions.dh);
     printf("Nx = %d, Ny = %d, Nz = %d\n", Nx, Ny, Nz);
+    printf("using %d cells of padding\n", padding);
 
-    printf("version RK4\n");
+
+
 
     if(!init_cuda()) {
         fprintf(stderr, "Could not initialize CUDA\n");
@@ -888,7 +887,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
                   (Ny + 2 * padding + block_y - 1) / block_y,
                   ((Nz + 2 * padding) + block_z - 1) / block_z);
 
-        if(iteration == 0 && signature_idx < sig_len / 100) {
+        if(iteration == 0 && signature_idx < sig_len) {
             real_t src_value = sig[signature_idx];
             emit_source<<<grid, block>>>(currentState.U, nextState.U, dimensions, src_value);
         }

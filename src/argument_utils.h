@@ -6,7 +6,8 @@
 typedef struct options_struct {
     real_t sim_Lx, sim_Ly, sim_Lz;
     real_t dt;
-    real_t dh;
+    real_t ppw;
+    int_t padding;
     int_t max_iteration;
     int_t snapshot_frequency;
 } OPTIONS;

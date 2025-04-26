@@ -1,8 +1,8 @@
 #include "argument_utils.h"
 #include "simulation.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 
 #define MODEL_Nx 1201
 #define MODEL_Ny 401
@@ -35,17 +35,25 @@ int main(int argc, char **argv) {
 
     fclose(model_file); // data is safe in array, we don't need the file anymore
 
-    int_t Nx = (int)ceil(options->sim_Lx / options->dh);
-    int_t Ny = (int)ceil(options->sim_Ly / options->dh);
-    int_t Nz = (int)ceil(options->sim_Lz / options->dh);
+    // first compute dh.
+    real_t smallest_wavelength = WATER_K / SRC_FREQUENCY;
+    real_t dh = smallest_wavelength / options->ppw;
+
+    real_t best_dt = 0.9*dh / (PLASTIC_K * sqrt(3));
+
+    printf("you are using dt = %e, should use %e\n", options->dt, best_dt);
+
+    int_t Nx = (int) ceil(options->sim_Lx / dh);
+    int_t Ny = (int) ceil(options->sim_Ly / dh);
+    int_t Nz = (int) ceil(options->sim_Lz / dh);
 
     simulation_parameters p = {
         .dimensions = {
             .Nx = Nx,
             .Ny = Ny,
             .Nz = Nz,
-            .padding = 5,
-            .dh = options->dh,
+            .padding = options->padding,
+            .dh = dh,
             .dt = options->dt,
         },
         .sim_Lx = options->sim_Lx,
