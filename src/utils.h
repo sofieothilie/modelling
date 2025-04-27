@@ -20,3 +20,5 @@ inline void gpuAssert(const cudaError_t code, const char *file, const int line) 
     }
 
 bool init_cuda();
+
+void print_progress_bar(int current_iteration, int total_iterations, struct timeval start, struct  timeval now);

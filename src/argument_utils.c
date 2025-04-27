@@ -19,6 +19,7 @@ OPTIONS
     int_t max_iteration = 50;
     int_t padding = 5;
     int_t snapshot_frequency = 10;
+    int_t print_info = 0;
 
     static struct option const long_options[] = {
         { "help", no_argument, 0, '?' },
@@ -30,10 +31,11 @@ OPTIONS
         { "dt", required_argument, 0, 't' },
         { "max_iteration", required_argument, 0, 'i' },
         { "snapshot_frequency", required_argument, 0, 's' },
+        { "print-info", no_argument, 0, 'I' },
         { 0, 0, 0, 0 }
     };
 
-    static char const *short_options = "?x:y:z:p:P:t:i:s:";
+    static char const *short_options = "?x:y:z:p:P:t:i:s:I";
     {
         char *endptr;
         int c;
@@ -107,6 +109,10 @@ OPTIONS
                         return NULL;
                     }
                     break;
+                case 'I':
+                    printf("caught an I\n");
+                    print_info = 1;
+                    break;
                 default:
                     abort();
             }
@@ -125,6 +131,7 @@ OPTIONS
     args_parsed->sim_Ly = sim_Ly;
     args_parsed->sim_Lz = sim_Lz;
     args_parsed->dt = dt;
+    args_parsed ->print_info = print_info;
     args_parsed->ppw = ppw;
     args_parsed->padding = padding;
     args_parsed->max_iteration = max_iteration;

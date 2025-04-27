@@ -27,8 +27,7 @@ __host__ __device__ int_t gcoords_to_index(const Coords gcoords, const Dimension
 #define U(gcoords) U[gcoords_to_index(gcoords, dimensions)]
 #define V(gcoords) V[gcoords_to_index(gcoords, dimensions)]
 
-__global__ void
-emit_source(real_t *const U, real_t *const Un, const Dimensions dimensions, const real_t value) {
+__global__ void emit_source(real_t *const U, const Dimensions dimensions, const real_t value) {
     const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
@@ -44,38 +43,38 @@ emit_source(real_t *const U, real_t *const Un, const Dimensions dimensions, cons
 
     // const double freq = 1.0e6; // 1MHz
 
-    // // // grid of sources over yz plane, at x = 5 maybe
-    // for(int n_i = 0; n_i < n_source; n_i++) {
-    //     for(int n_j = 0; n_j < n_source; n_j++) {
-    //         int idx_i = padding + Nx / 2 - (n_source / 2 * spacing) + n_i * spacing;
-    //         int idx_j = padding + Ny / 2 - (n_source / 2 * spacing) + n_j * spacing;
+    // // grid of sources over yz plane, at x = 5 maybe
+    for(int n_i = 0; n_i < n_source; n_i++) {
+        for(int n_j = 0; n_j < n_source; n_j++) {
+            int idx_i = padding + Nx / 2 - (n_source / 2 * spacing) + n_i * spacing;
+            int idx_j = padding + Ny / 2 - (n_source / 2 * spacing) + n_j * spacing;
 
-    //         double shift = 0;
-    //         // (double) n_j / n_source * 2 * M_PI * 0.7;
-    //         // double sine = sin(2 * M_PI * t * freq - shift);
+            double shift = 0;
+            // (double) n_j / n_source * 2 * M_PI * 0.7;
+            // double sine = sin(2 * M_PI * t * freq - shift);
 
-    //         const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
+            const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
 
-    //         U(gcoords) = value;
-    //     }
-    // }
-
-    Coords gcoords = { i, j, k };
-
-    // const Coords emit_coords = { .x = padding + Nx / 2,
-    //                              .y = padding + Ny / 2,
-    //                              .z = padding + Nz / 2 };
-    // // const double freq = 1e3;
-    real_t x = (i - padding - Nx / 2) * dh;
-    real_t y = (j - padding - Ny / 2) * dh;
-    real_t z = (k - padding - Nz / 2) * dh;
-
-    real_t cx = 0, cy = 0;
-    if(k >= padding && k < padding + Nz && i >= padding && i < padding + Nx && j >= padding
-       && j < padding + Ny) {
-        real_t delta = ((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z * z));
-        U(gcoords) = Un[gcoords_to_index(gcoords, dimensions)] = exp(-4000000.0 * delta);
+            U(gcoords) = value;
+        }
     }
+
+    // Coords gcoords = { i, j, k };
+
+    // // const Coords emit_coords = { .x = padding + Nx / 2,
+    // //                              .y = padding + Ny / 2,
+    // //                              .z = padding + Nz / 2 };
+    // // // const double freq = 1e3;
+    // real_t x = (i - padding - Nx / 2) * dh;
+    // real_t y = (j - padding - Ny / 2) * dh;
+    // real_t z = (k - padding - Nz / 2) * dh;
+
+    // real_t cx = 0, cy = 0;
+    // if(k >= padding && k < padding + Nz && i >= padding && i < padding + Nx && j >= padding
+    //    && j < padding + Ny) {
+    //     real_t delta = ((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z * z));
+    //     U(gcoords) = Un[gcoords_to_index(gcoords, dimensions)] = exp(-4000000.0 * delta);
+    // }
 }
 
 void get_recv(const real_t *d_buffer, FILE *output, Dimensions dimensions) {
@@ -203,45 +202,18 @@ __device__ Coords tau_shift(const Coords gcoords,
     }
 }
 
-__device__ real_t get_K(const Coords gcoords, const Dimensions dimensions) {
-    // const int_t Nx = dimensions.Nx;
-    // const int_t Ny = dimensions.Ny;
+__device__ MediumParameters get_params(const Coords gcoords, const Dimensions dimensions) {
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
 
-    // const int_t i = gcoords.x;
-    // const int_t j = gcoords.y;
     const int_t k = gcoords.z;
 
+    return WATER_PARAMETERS;
 
-    // return 1.0;
+    if(k > padding + 5 * Nz / 6 || k < padding + Nz / 2)
+        return WATER_PARAMETERS;
 
-    return WATER_K;
-
-    if(k < padding + 5 * Nz / 6)
-        return WATER_K;
-
-    return PLASTIC_K;
-}
-
-__device__ real_t get_rho(const Coords gcoords, const Dimensions dimensions) {
-    // const int_t Nx = dimensions.Nx;
-    // const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
-    const int_t padding = dimensions.padding;
-
-    // const int_t i = gcoords.x;
-    // const int_t j = gcoords.y;
-    const int_t k = gcoords.z;
-
-
-    return WATER_RHO;
-    // return 1.0;
-
-    if(k < padding + 5 * Nz / 6)
-        return WATER_RHO;
-
-    return PLASTIC_RHO;
+    return PLASTIC_PARAMETERS;
 }
 
 __device__ real_t get_sigma(const Coords gcoords,
@@ -258,8 +230,8 @@ __device__ real_t get_sigma(const Coords gcoords,
 }
 
 #define tau(shift) (tau_shift(gcoords, shift, component, dimensions))
-#define K(gcoords) (get_K(gcoords, dimensions))
-#define Rho(gcoords) (get_rho(gcoords, dimensions))
+#define K(gcoords) (get_params(gcoords, dimensions).k)
+#define Rho(gcoords) (get_params(gcoords, dimensions).rho)
 #define sigma(gcoords) (get_sigma(gcoords, dimensions, component))
 #define Psi(S, gcoords) (get_PML_var(S.Psi, gcoords, component, dimensions))
 #define Phi(S, gcoords) (get_PML_var(S.Phi, gcoords, component, dimensions))
@@ -821,13 +793,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     const int_t padding = dimensions.padding;
     // const real_t dh = dimensions.dh;
 
-    printf("dh = %lf\n", dimensions.dh);
-    printf("Nx = %d, Ny = %d, Nz = %d\n", Nx, Ny, Nz);
-    printf("using %d cells of padding\n", padding);
-
-
-
-
     if(!init_cuda()) {
         fprintf(stderr, "Could not initialize CUDA\n");
         exit(EXIT_FAILURE);
@@ -851,15 +816,15 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     real_t *sig;
     int sig_len = signature(&sig);
 
-    printf("sig_len  = %d\n", sig_len);
-
     struct timeval start, end;
 
     gettimeofday(&start, NULL);
-
+    printf("Started simulation...\n");
     for(int_t iteration = 0; iteration < max_iteration; iteration++) {
+        gettimeofday(&end, NULL);
+        print_progress_bar(iteration, max_iteration, start, end);
         if((iteration % snapshot_freq) == 0) {
-            printf("iteration %d/%d\n", iteration, max_iteration);
+            // printf("iteration %d/%d\n", iteration, max_iteration);
             cudaDeviceSynchronize();
             domain_save(currentState.U, dimensions);
         }
@@ -887,9 +852,9 @@ extern "C" int simulate_wave(const simulation_parameters p) {
                   (Ny + 2 * padding + block_y - 1) / block_y,
                   ((Nz + 2 * padding) + block_z - 1) / block_z);
 
-        if(iteration == 0 && signature_idx < sig_len) {
+        if(signature_idx < sig_len) {
             real_t src_value = sig[signature_idx];
-            emit_source<<<grid, block>>>(currentState.U, nextState.U, dimensions, src_value);
+            emit_source<<<grid, block>>>(nextState.U, dimensions, src_value);
         }
 
         // show_sigma<<<grid, block>>>(dimensions, currentState.U, nextState.U);

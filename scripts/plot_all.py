@@ -7,6 +7,7 @@ import pandas as pd
 from matplotlib.colors import SymLogNorm
 from concurrent.futures import ProcessPoolExecutor
 from mpl_toolkits.mplot3d import Axes3D
+from tqdm import tqdm
 
 M = 100
 N = 100
@@ -94,7 +95,7 @@ def process_file(data_file):
     output_file = data_file.replace(".dat", ".png").replace("wave_data", "wave_images")
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plot_data_2d(data_file, output_file)
-    print(f"Plot saved to {output_file}")
+    return output_file
 
 def main():
     if not os.path.isdir(data_folder):
@@ -106,8 +107,7 @@ def main():
     data_files = [os.path.join(root, file) for root, _, files in os.walk(data_folder) for file in files if file.endswith(".dat")]
     
     with ProcessPoolExecutor() as executor:
-        executor.map(process_file, data_files)
-    
+        results = list(tqdm(executor.map(process_file, data_files), total=len(data_files), desc="Processing Files"))    
     print("All plots have been generated.")
 
 if __name__ == "__main__":

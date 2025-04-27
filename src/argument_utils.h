@@ -10,6 +10,7 @@ typedef struct options_struct {
     int_t padding;
     int_t max_iteration;
     int_t snapshot_frequency;
+    int print_info;
 } OPTIONS;
 
 

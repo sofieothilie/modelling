@@ -33,7 +33,6 @@ typedef struct {
     real_t *side[N_SIDES];
 } PML_Variable;
 
-
 typedef struct {
     real_t *U;
     real_t *V;
@@ -42,11 +41,15 @@ typedef struct {
 } SimulationState;
 
 typedef struct {
+    real_t k;
+    real_t rho;
+} MediumParameters;
+
+typedef struct {
     int_t x;
     int_t y;
     int_t z;
 } Coords;
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,11 +64,8 @@ void free_simulation_state(SimulationState s);
 }
 #endif
 
-#define WATER_K ((real_t)1500.0)
-#define WATER_RHO ((real_t)998.0)
+#define WATER_PARAMETERS ((MediumParameters) { .k = 1500.0, .rho = 998.0 })
+#define PLASTIC_PARAMETERS ((MediumParameters) { .k = 2270.0, .rho = 1185.0 })
 
-#define PLASTIC_K  ((real_t)2270.0)
-#define PLASTIC_RHO ((real_t)1185.0)
-
-#define SRC_FREQUENCY ((real_t)1.0e6)
-#define SRC_SAMPLE_RATE ((real_t)(8.0 * SRC_FREQUENCY))
+#define SRC_FREQUENCY ((real_t) 1.0e6)
+#define SRC_SAMPLE_RATE ((real_t) (8.0 * SRC_FREQUENCY))
