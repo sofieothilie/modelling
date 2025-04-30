@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -11,6 +12,7 @@ from tqdm import tqdm
 
 M = 100
 N = 100
+
 
 data_folder = "./wave_data"
 
@@ -51,12 +53,66 @@ def plot_data_3d(file_path, output_path):
     plt.savefig(output_path)
     plt.close()
 
+def scale(x):
+    global dh
+    return  x *dh*1e2
 
 def plot_data_2d(file_path, output_path):
     data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
-    plt.imshow(data,norm=SymLogNorm(linthresh=1e-3, vmin=-1, vmax=1), cmap='seismic')
+    global padding
+
+    
+    x0 = scale(-padding)
+    y0 = scale(-padding)
+        
+    Lx =  scale(data.shape[1]) +x0
+    Lz = scale( data.shape[0]) +y0
+    plt.imshow(data, norm=SymLogNorm(linthresh=1e-3, vmin=-1, vmax=1), cmap='seismic' , extent=[x0, Lx, Lz, y0])
+    plt.xlabel("X (cm)")
+    plt.ylabel("Y (cm)")
+
     # plt.imshow(data,vmin=-0.1, vmax=0.1, cmap='seismic')
     plt.colorbar()
+    
+    
+    global dt
+    rect = plt.Rectangle(
+        (0,0),  # Bottom-left corner
+        scale((data.shape[1] - 2 * padding)),  # Width
+        scale((data.shape[0] - 2 * padding)),  # Height
+        linewidth=1, edgecolor='green', facecolor='none', linestyle='dotted'
+    )
+    
+
+    
+    plt.text(
+        1.23, -0.1,
+        file_path,
+        ha='center', va='top', transform=plt.gca().transAxes,
+        fontsize=8, color='gray'
+    )
+    iteration = int(file_path.split("/")[-1].split(".")[0])
+    
+    # Time stamp as text box
+    time_in_microseconds = snapshots* dt * iteration * 1e6
+    if time_in_microseconds < 1e2:
+        time_text = f"{time_in_microseconds:.3f} μs"
+    else:
+        time_in_milliseconds = time_in_microseconds / 1e3
+        time_text = f"{time_in_milliseconds:.3f} ms"
+    
+    plt.gcf().text(
+        0.7, 0.92,  # x, y (top right of the plot)
+        time_text.replace("e-0", "e-").replace("e+0", "e+"),
+        ha='center', va='top',
+        fontsize=10,
+        bbox=dict(facecolor='white', alpha=0.7, edgecolor='none')
+    )
+    
+    # Draw an empty rectangle with padding from each border
+
+    plt.gca().add_patch(rect)
+    
     plt.savefig(output_path)
     plt.close()
 
@@ -66,7 +122,7 @@ def plot_data_1d(file_path, output_path):
     data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
 
     # Extract the slice at y = 50 (row 50)
-    y_index = 35  # Change this to any row index you want to plot
+    y_index = 22  # Change this to any row index you want to plot
     slice_data = data.values[y_index, :]  # Select the entire row corresponding to y = 50
 
     # Create the figure and axis objects
@@ -102,12 +158,24 @@ def main():
         print(f"Error: Data folder {data_folder} does not exist.")
         return
     
+    ppw = float(sys.argv[1])
+    global snapshots
+    snapshots =  int(sys.argv[2])
+    global dt
+    global padding 
+    padding = int(sys.argv[3])
+    
+    global dh 
+    dh = 1500.0 / 1e6 / ppw 
+
+    dt = 0.9 * dh / (2270 * np.sqrt(3))
+    
     os.makedirs("images", exist_ok=True)
     
     data_files = [os.path.join(root, file) for root, _, files in os.walk(data_folder) for file in files if file.endswith(".dat")]
     
     with ProcessPoolExecutor() as executor:
-        results = list(tqdm(executor.map(process_file, data_files), total=len(data_files), desc="Processing Files"))    
+        results = list(tqdm(executor.map(process_file, data_files), total=len(data_files), desc="Plotting plots"))    
     print("All plots have been generated.")
 
 if __name__ == "__main__":

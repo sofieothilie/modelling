@@ -1,5 +1,6 @@
 #include "argument_utils.h"
 #include "simulation.h"
+#include "utils.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,40 +31,7 @@ int main(int argc, char **argv) {
         .dt = options->dt,
     };
 
-    printf("-----------------------------------\n");
-    printf("------ Simulation Parameters ------\n");
-    printf("-----------------------------------\n");
-    printf("dh: %lf\n", dh);
-    printf("dt: %e\n", best_dt);
-    printf("Grid dimensions: Nx = %d, Ny = %d, Nz = %d\n", Nx, Ny, Nz);
-    printf("Padding cells: %d\n", options->padding);
-    printf("\n-----------------------------------\n");
-
-    printf("---- Memory Allocation Details ----\n");
-    printf("-----------------------------------\n");
-    int_t padding = options->padding;
-    size_t tot_x = Nx + 2 * padding + 2;
-    size_t tot_y = Ny + 2 * padding + 2;
-    size_t tot_z = Nz + 2 * padding + 2;
-
-    size_t full_buffer_size = tot_x * tot_y * tot_z * sizeof(real_t);
-    size_t PML_shell_size = 2 * (Nx + 2 * padding + 2) * (Ny + 2 * padding + 2) * (padding + 1)
-                          + 2 * (padding + 1) * (Ny + 2 * padding + 2) * (Nz + 2 * padding + 2)
-                          + 2 * (Nx + 2 * padding + 2) * (padding + 1) * (Nz + 2 * padding + 2);
-
-    PML_shell_size *= sizeof(real_t);
-
-    printf("3 sim state x (2 full buffers + 1 PML shell)\n");
-    printf("1 buffer size: (%zux%zux%zu) x %zu bytes = %.2lf MB\n",
-           tot_x,
-           tot_y,
-           tot_z,
-           sizeof(real_t),
-           full_buffer_size / (1000. * 1000.));
-    printf("PML shell size: %lf MB\n", PML_shell_size / (1000. * 1000.));
-    printf(" => total allocated size = %lf MB\n",
-           3. * (2. * full_buffer_size + PML_shell_size) / (1000. * 1000.));
-    printf("-----------------------------------\n\n");
+    print_start_info(d);
 
     if(options->print_info) {
         // do not run, only print launch informations

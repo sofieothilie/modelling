@@ -73,7 +73,7 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     // if(k >= padding && k < padding + Nz && i >= padding && i < padding + Nx && j >= padding
     //    && j < padding + Ny) {
     //     real_t delta = ((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z * z));
-    //     U(gcoords) = Un[gcoords_to_index(gcoords, dimensions)] = exp(-4000000.0 * delta);
+    //     U(gcoords) = exp(-4000000.0 * delta);
     // }
 }
 
@@ -137,16 +137,16 @@ __device__ bool border_match_component(const Coords gcoords,
                                        const Component component) {
     switch(component) {
         case X:
-            return gcoords.x < dimensions.padding - 1 // try one broader!
-                || gcoords.x > dimensions.Nx + dimensions.padding;
+            return gcoords.x < dimensions.padding
+                || gcoords.x >= dimensions.Nx + dimensions.padding;
 
         case Y:
-            return gcoords.y < dimensions.padding - 1
-                || gcoords.y > dimensions.Ny + dimensions.padding;
+            return gcoords.y < dimensions.padding 
+                || gcoords.y >= dimensions.Ny + dimensions.padding;
 
         case Z:
-            return gcoords.z < dimensions.padding - 1
-                || gcoords.z > dimensions.Nz + dimensions.padding;
+            return gcoords.z < dimensions.padding 
+                || gcoords.z >= dimensions.Nz + dimensions.padding;
     }
 }
 
@@ -208,9 +208,9 @@ __device__ MediumParameters get_params(const Coords gcoords, const Dimensions di
 
     const int_t k = gcoords.z;
 
-    return WATER_PARAMETERS;
+    // return WATER_PARAMETERS;
 
-    if(k > padding + 5 * Nz / 6 || k < padding + Nz / 2)
+    if(k < padding + 4* Nz/5)
         return WATER_PARAMETERS;
 
     return PLASTIC_PARAMETERS;
@@ -868,12 +868,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     cudaDeviceSynchronize();
 
     fclose(output_buffer);
-
-    gettimeofday(&end, NULL);
-
-    double diff = WALLTIME(end) - WALLTIME(start);
-
-    printf("time taken: %lf sec, %lf per iteration\n", diff, diff / max_iteration);
 
     // free_simulation_state(currentState);
     // free_simulation_state(tmp);

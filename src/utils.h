@@ -2,6 +2,7 @@
 #include "simulation.h"
 #include <sys/time.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #define WALLTIME(t) ((double) (t).tv_sec + 1e-6 * (double) (t).tv_usec)
 
@@ -19,6 +20,16 @@ inline void gpuAssert(const cudaError_t code, const char *file, const int line) 
         gpuAssert((ans), __FILE__, __LINE__);                                                      \
     }
 
-bool init_cuda();
+int init_cuda();
 
 void print_progress_bar(int current_iteration, int total_iterations, struct timeval start, struct  timeval now);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void print_start_info(Dimensions dimensions);
+
+#ifdef __cplusplus
+}
+#endif
