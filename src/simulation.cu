@@ -77,28 +77,31 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     // }
 }
 
-void get_recv(const real_t *d_buffer, FILE *output, Dimensions dimensions) {
-    // static int_t iter = 0;
+// void get_recv(const real_t *d_buffer, FILE *output, Dimensions dimensions) {
+//     // static int_t iter = 0;
 
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
-    const int_t padding = dimensions.padding;
-    const int_t dh = dimensions.dh;
+//     const int_t Nx = dimensions.Nx;
+//     const int_t Ny = dimensions.Ny;
+//     const int_t Nz = dimensions.Nz;
+//     const int_t padding = dimensions.padding;
+//     const int_t dh = dimensions.dh;
 
-    const int_t size = get_domain_size(dimensions);
+//     const int_t size = get_domain_size(dimensions);
 
-    real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
-    cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer, sizeof(real_t) * size, cudaMemcpyDeviceToHost));
+//     FILE *recv_output = fopen(sensor_output_filename, "a");
 
-    Coords dst_coords = { .x = Nx / 2 + padding, .y = Ny / 2 + padding, .z = padding + 10 };
+//     real_t *const h_buffer = (real_t *) malloc(size * sizeof(real_t));
+//     cudaErrorCheck(cudaMemcpy(h_buffer, d_buffer, sizeof(real_t) * size, cudaMemcpyDeviceToHost));
 
-    real_t at_dest = h_buffer[gcoords_to_index(dst_coords, dimensions)];
+//     Coords dst_coords = { .x = Nx / 2 + padding, .y = Ny / 2 + padding, .z = padding + 10 };
 
-    fwrite(&at_dest, sizeof(real_t), 1, output);
+//     real_t at_dest = h_buffer[gcoords_to_index(dst_coords, dimensions)];
 
-    free(h_buffer);
-}
+//     fwrite(&at_dest, sizeof(real_t), 1, output);
+
+//     free(h_buffer);
+//     fclose(recv_output);
+// }
 
 // dim3 get_pml_grid(Dimensions dimensions, dim3 block, Side side) {
 //     const int_t Nx = dimensions.Nx;
@@ -141,11 +144,11 @@ __device__ bool border_match_component(const Coords gcoords,
                 || gcoords.x >= dimensions.Nx + dimensions.padding;
 
         case Y:
-            return gcoords.y < dimensions.padding 
+            return gcoords.y < dimensions.padding
                 || gcoords.y >= dimensions.Ny + dimensions.padding;
 
         case Z:
-            return gcoords.z < dimensions.padding 
+            return gcoords.z < dimensions.padding
                 || gcoords.z >= dimensions.Nz + dimensions.padding;
     }
 }
@@ -208,9 +211,9 @@ __device__ MediumParameters get_params(const Coords gcoords, const Dimensions di
 
     const int_t k = gcoords.z;
 
-    // return WATER_PARAMETERS;
+    return WATER_PARAMETERS;
 
-    if(k < padding + 4* Nz/5)
+    if(k < padding + 4 * Nz / 5)
         return WATER_PARAMETERS;
 
     return PLASTIC_PARAMETERS;
@@ -776,6 +779,28 @@ __global__ void show_sigma(Dimensions dimensions, real_t *U, real_t *U_prev) {
     U(gcoords) = U_prev[gcoords_to_index(gcoords, dimensions)] = get_sigma(gcoords, dimensions, X);
 }
 
+__global__ void set_sensor_value(const SimulationState s, real_t* sensor_value, const Dimensions dimensions){
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+    const int_t dh = dimensions.dh;
+
+    Coords receiver_coords = { .x = Nx / 2 + padding, .y = Ny / 2 + padding, .z = padding + 10 };
+
+    *sensor_value = s.U(receiver_coords);
+}
+
+void append_value_to_file(const char* filename, real_t *d_value){
+    //1. copy back value to cpu
+    real_t h_value  = 0;
+    cudaErrorCheck(cudaMemcpy(&h_value, d_value, sizeof(real_t), cudaMemcpyDeviceToHost));
+
+    FILE* output_file  = fopen(filename, "a");
+    fwrite(&h_value, sizeof(real_t), 1, output_file);
+    fclose(output_file);
+}
+
 extern "C" int simulate_wave(const simulation_parameters p) {
     const real_t dt = p.dt;
     const int_t max_iteration = p.max_iter;
@@ -811,7 +836,18 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     SimulationState intermediateState = allocate_simulation_state(dimensions);
     SimulationState nextState = allocate_simulation_state(dimensions);
 
-    FILE *output_buffer = fopen("sensor_out/dest_wave.dat", "w");
+    const char *sensor_output_filename = "sensor_out/recv_data.dat";
+
+    // overwrite last output file.
+    FILE *f = fopen(sensor_output_filename, "w");
+    fclose(f);
+    f = NULL;
+
+    //contains the value at the sensor, will be copied from the gpu every iteration, and written to file.
+    real_t *d_current_value_at_sensor;
+
+    cudaMalloc(&d_current_value_at_sensor, sizeof(real_t));
+
 
     real_t *sig;
     int sig_len = signature(&sig);
@@ -821,15 +857,17 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     gettimeofday(&start, NULL);
     printf("Started simulation...\n");
     for(int_t iteration = 0; iteration < max_iteration; iteration++) {
+        cudaDeviceSynchronize();//is it necessary before recording values ? is it slowing the program down ? --> test
         gettimeofday(&end, NULL);
         print_progress_bar(iteration, max_iteration, start, end);
         if((iteration % snapshot_freq) == 0) {
             // printf("iteration %d/%d\n", iteration, max_iteration);
-            cudaDeviceSynchronize();
             domain_save(currentState.U, dimensions);
         }
 
-        get_recv(currentState.U, output_buffer, dimensions);
+        //record sensor output
+        set_sensor_value<<<1,1>>>(currentState, d_current_value_at_sensor, dimensions);
+        append_value_to_file(sensor_output_filename, d_current_value_at_sensor);
 
         // RK4_step(currentState, tmp, K1, K2, K3, K4, dimensions);
         RK4_step_lowstorage(currentState, intermediateState, nextState, dimensions);
@@ -867,7 +905,10 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     }
     cudaDeviceSynchronize();
 
-    fclose(output_buffer);
+
+    set_sensor_value<<<1,1>>>(currentState, d_current_value_at_sensor, dimensions);
+    append_value_to_file(sensor_output_filename, d_current_value_at_sensor);
+
 
     // free_simulation_state(currentState);
     // free_simulation_state(tmp);
