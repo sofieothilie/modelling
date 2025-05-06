@@ -14,6 +14,7 @@ OPTIONS
      */
 
     real_t sim_Lx = 0.01, sim_Ly = 0.01, sim_Lz = 0.01;
+    Position sensor = { 0, 0, -0.1 };
     real_t dt = 1e-8;
     real_t ppw = 10;
     int_t max_iteration = 50;
@@ -32,10 +33,13 @@ OPTIONS
         { "max_iteration", required_argument, 0, 'i' },
         { "snapshot_frequency", required_argument, 0, 's' },
         { "print-info", no_argument, 0, 'I' },
+        { "sensor_x", required_argument, 0, 'X' },
+        { "sensor_y", required_argument, 0, 'Y' },
+        { "sensor_z", required_argument, 0, 'Z' },
         { 0, 0, 0, 0 }
     };
 
-    static char const *short_options = "?x:y:z:p:P:t:i:s:I";
+    static char const *short_options = "?x:y:z:p:P:t:i:s:I:X:Y:Z:";
     {
         char *endptr;
         int c;
@@ -64,6 +68,28 @@ OPTIONS
                 case 'z':
                     sim_Lz = strtod(optarg, &endptr);
                     if(endptr == optarg || sim_Lz < 0) {
+                        help(argv[0], c, optarg);
+                        return NULL;
+                    }
+                    break;
+                case 'X':
+                    sensor.x = strtod(optarg, &endptr);
+                    if(endptr == optarg) {
+                        help(argv[0], c, optarg);
+                        return NULL;
+                    }
+                    break;
+                case 'Y':
+                    sensor.y = strtod(optarg, &endptr);
+                    if(endptr == optarg) {
+                        help(argv[0], c, optarg);
+                        return NULL;
+                    }
+                    break;
+                case 'Z':
+                    sensor.z = strtod(optarg, &endptr);
+                    printf("parsed sensor z: %lf\n",  sensor.z);
+                    if(endptr == optarg) {
                         help(argv[0], c, optarg);
                         return NULL;
                     }
@@ -131,11 +157,12 @@ OPTIONS
     args_parsed->sim_Ly = sim_Ly;
     args_parsed->sim_Lz = sim_Lz;
     args_parsed->dt = dt;
-    args_parsed ->print_info = print_info;
+    args_parsed->print_info = print_info;
     args_parsed->ppw = ppw;
     args_parsed->padding = padding;
     args_parsed->max_iteration = max_iteration;
     args_parsed->snapshot_frequency = snapshot_frequency;
+    args_parsed->sensor = sensor;
 
     return args_parsed;
 }

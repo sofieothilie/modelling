@@ -14,13 +14,7 @@ typedef struct {
     real_t dt;
 } Dimensions;
 
-typedef struct {
-    real_t *model_data;
-    Dimensions dimensions;
-    real_t sim_Lx, sim_Ly, sim_Lz;
-    real_t dt;
-    int max_iter, snapshot_freq;
-} simulation_parameters;
+
 
 typedef enum { BOTTOM, TOP, LEFT, RIGHT, FRONT, BACK } Side;
 #define N_SIDES (6)
@@ -51,6 +45,21 @@ typedef struct {
     int_t z;
 } Coords;
 
+typedef struct {
+    real_t x;
+    real_t y;
+    real_t z;
+} Position;
+
+typedef struct {
+    real_t *model_data;
+    Dimensions dimensions;
+    real_t sim_Lx, sim_Ly, sim_Lz;
+    Position sensor;
+    real_t dt;
+    int max_iter, snapshot_freq;
+} simulation_parameters;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -59,6 +68,8 @@ int_t get_domain_size(const Dimensions dimensions);
 int simulate_wave(simulation_parameters p);
 SimulationState allocate_simulation_state(const Dimensions dimensions);
 void free_simulation_state(SimulationState s);
+double* open_model(const char* filename);
+void free_model(double* model);
 
 #ifdef __cplusplus
 }
@@ -69,3 +80,11 @@ void free_simulation_state(SimulationState s);
 
 #define SRC_FREQUENCY ((real_t) 1.0e6)
 #define SRC_SAMPLE_RATE ((real_t) (8.0 * SRC_FREQUENCY))
+
+//make it a parameter or smth
+#define MODEL_NX 1201
+#define MODEL_NY 401
+
+#define MODEL_LX 3.0
+#define MODEL_LY 1.0
+#define MODEL_LZ 0.2

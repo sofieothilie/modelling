@@ -83,3 +83,36 @@ void free_simulation_state(SimulationState s) {
     free_pml_variables(s.Psi);
     free_pml_variables(s.Phi);
 }
+
+double* open_model(const char* filename){
+    FILE *model_file = fopen(filename, "rb");
+    if(!model_file) {
+        perror("Failed to open file");
+        return NULL;
+    }
+
+    double *model = (double*) calloc(MODEL_NX * MODEL_NY, sizeof(double));
+
+    if(model == NULL) {
+        perror("Failed to allocate model memory");
+        fclose(model_file);
+        return NULL;
+    }
+
+    // Read the binary data into the array
+    size_t read_size = fread(model, sizeof(double), MODEL_NX * MODEL_NY, model_file);
+    if(read_size != MODEL_NX * MODEL_NY) {
+        perror("Failed to read file");
+        free(model);
+        fclose(model_file);
+        return NULL;
+    }
+
+    fclose(model_file); // data is safe in array, we don't need the file anymore
+
+    return model;
+}
+
+void free_model(double* model){
+    free(model);
+} 

@@ -2,11 +2,16 @@
 
 all: test
 
-SIMULATION_X = 0.01
-SIMULATION_Y = 0.01
-SIMULATION_Z = 0.4
+SIMULATION_X = 0.05
+SIMULATION_Y = 0.05
+SIMULATION_Z = 0.25
+
+SENSOR_X = 0.05
+SENSOR_Y = 0.1
+SENSOR_HEIGHT = 0.05
+
 PPW = 5
-ITERATIONS = 2000
+ITERATIONS = 5000
 SNAPSHOT = 3
 PADDING = 5
 
@@ -39,10 +44,10 @@ debug: src/argument_utils.c src/model_cli.c src/getopt.c src/memory_management.c
 
 run: 
 	@mkdir -p wave_data
-	@./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
+	@./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
 info: 
-	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
+	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_Z) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
 
 

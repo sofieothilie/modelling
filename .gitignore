@@ -13,9 +13,11 @@ build
 compare
 *.lib
 *.obj
-*.dat
+
 movies
 bin
 archive
 myfile.ptx
 data/measured_traces
+out_model.dat
+sensor_out

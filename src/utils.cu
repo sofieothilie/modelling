@@ -121,7 +121,8 @@ void print_start_info(Dimensions dimensions){
 
     cudaDeviceProp prop;
     cudaErrorCheck(cudaGetDeviceProperties(&prop, 0));
-    int mem_capacity = prop.totalGlobalMem / (1024 * 1024);
+    double mem_capacity = prop.totalGlobalMem / (1024. * 1024.);
+
 
 
     printf("3 sim state x (2 full buffers + 1 PML shell)\n");

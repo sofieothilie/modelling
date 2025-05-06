@@ -5,6 +5,7 @@
 
 typedef struct options_struct {
     real_t sim_Lx, sim_Ly, sim_Lz;
+    Position sensor;
     real_t dt;
     real_t ppw;
     int_t padding;

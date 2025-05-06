@@ -38,33 +38,10 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    FILE *model_file = fopen("data/model.bin", "rb");
-    if(!model_file) {
-        perror("Failed to open file");
-        return 1;
-    }
-
-    double *model = calloc(MODEL_Nx * MODEL_Ny, sizeof(double));
-
-    if(model == NULL) {
-        perror("Failed to allocate memory");
-        fclose(model_file);
-        return 1;
-    }
-
-    // Read the binary data into the array
-    size_t read_size = fread(model, sizeof(double), 1, model_file);
-    if(read_size != 1) {
-        perror("Failed to read file");
-        free(model);
-        fclose(model_file);
-        return 1;
-    }
-
-    fclose(model_file); // data is safe in array, we don't need the file anymore
 
     simulation_parameters p = {
         .dimensions = d,
+        .sensor = options->sensor,
         .sim_Lx = options->sim_Lx,
         .sim_Ly = options->sim_Ly,
         .sim_Lz = options->sim_Lz,
