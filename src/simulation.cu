@@ -38,8 +38,10 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
     const int_t padding = dimensions.padding;
     const real_t dh = dimensions.dh;
 
-    int n_source = 7;
-    int spacing = 2; // spacing in terms of cells, not distance
+    const real_t wavelength = WATER_PARAMETERS.k / SRC_FREQUENCY;
+
+    const int n_source = 7;
+    const int spacing = (int)(0.25*wavelength / dh); // spacing in terms of cells, not distance
 
     // const double freq = 1.0e6; // 1MHz
 
@@ -53,7 +55,9 @@ __global__ void emit_source(real_t *const U, const Dimensions dimensions, const 
             // (double) n_j / n_source * 2 * M_PI * 0.7;
             // double sine = sin(2 * M_PI * t * freq - shift);
 
-            const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding + 10 };
+            // printf("%\n",    (int)(0.005/dh));
+
+            const Coords gcoords = { .x = idx_i, .y = idx_j, .z = padding +  (int)(0.005/dh) };
 
             U(gcoords) = value;
         }
@@ -683,7 +687,7 @@ __host__ void RK4_step_lowstorage(SimulationState current,
 
     const real_t dt = dimensions.dt;
 
-    int block_x = 8;
+    int block_x = 4;
     int block_y = 8;
     int block_z = 8;
     dim3 block(block_x, block_y, block_z);
@@ -862,9 +866,13 @@ set_sensor_value(const SimulationState s, real_t *sensor_value, const Dimensions
     const int_t Ny = dimensions.Ny;
     const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
-    const int_t dh = dimensions.dh;
+    const real_t dh = dimensions.dh;
 
-    Coords receiver_coords = { .x = Nx / 2 + padding, .y = Ny / 2 + padding, .z = padding + 10 };
+    int z =  padding + (int)(0.06/dh) + (int)(0.005/dh) ;
+
+    // printf("z = %d\n", z);
+
+    Coords receiver_coords = { .x = Nx / 2 + padding, .y = Ny / 2 + padding, .z = z};
 
     *sensor_value = s.U(receiver_coords);
 }
@@ -948,6 +956,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     gettimeofday(&start, NULL);
     printf("Started simulation...\n");
+
+    real_t t_last_sample = -1.0;
     for(int_t iteration = 0; iteration < max_iteration; iteration++) {
         cudaDeviceSynchronize(); // is it necessary before recording values ? is it slowing the
                                  // program down ? --> test
@@ -958,9 +968,13 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             domain_save(currentState.U, dimensions);
         }
 
-        // record sensor output
-        set_sensor_value<<<1, 1>>>(currentState, d_current_value_at_sensor, dimensions);
-        append_value_to_file(sensor_output_filename, d_current_value_at_sensor);
+        // record sensor output, if sampling time distance since last sample is close enough 
+        if(iteration * dt - t_last_sample >= 1.0 / SAMPLE_RATE) {
+            t_last_sample = iteration * dt;
+            set_sensor_value<<<1, 1>>>(currentState, d_current_value_at_sensor, dimensions);
+            cudaDeviceSynchronize();
+            append_value_to_file(sensor_output_filename, d_current_value_at_sensor);
+        }
 
         // RK4_step(currentState, tmp, K1, K2, K3, K4, dimensions);
         RK4_step_lowstorage(currentState, intermediateState, nextState, dimensions, d_model, sensor);

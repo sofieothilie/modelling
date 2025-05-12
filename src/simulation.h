@@ -79,7 +79,7 @@ void free_model(double* model);
 #define PLASTIC_PARAMETERS ((MediumParameters) { .k = 2270.0, .rho = 1185.0 })
 
 #define SRC_FREQUENCY ((real_t) 1.0e6)
-#define SRC_SAMPLE_RATE ((real_t) (8.0 * SRC_FREQUENCY))
+#define SAMPLE_RATE ((real_t) (8.0 * SRC_FREQUENCY))
 
 //make it a parameter or smth
 #define MODEL_NX 1201

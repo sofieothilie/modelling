@@ -2,16 +2,16 @@
 
 all: test
 
-SIMULATION_X = 0.05
-SIMULATION_Y = 0.05
-SIMULATION_Z = 0.25
+SIMULATION_X = 0.01
+SIMULATION_Y = 0.01
+SIMULATION_Z = 0.07
 
-SENSOR_X = 0.05
-SENSOR_Y = 0.1
-SENSOR_HEIGHT = 0.05
+SENSOR_X = -1.0
+SENSOR_Y = -1.0
+SENSOR_HEIGHT = 0.1
 
-PPW = 5
-ITERATIONS = 5000
+PPW = 6
+ITERATIONS = 4000
 SNAPSHOT = 3
 PADDING = 5
 
@@ -47,7 +47,7 @@ run:
 	@./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
 info: 
-	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_Z) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
+	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
 
 
