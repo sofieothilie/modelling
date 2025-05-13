@@ -687,7 +687,7 @@ __host__ void RK4_step_lowstorage(SimulationState current,
 
     const real_t dt = dimensions.dt;
 
-    int block_x = 4;
+    int block_x = 8;
     int block_y = 8;
     int block_z = 8;
     dim3 block(block_x, block_y, block_z);
@@ -957,7 +957,7 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     gettimeofday(&start, NULL);
     printf("Started simulation...\n");
 
-    real_t t_last_sample = -1.0;
+    int n_stored_samples = 0;
     for(int_t iteration = 0; iteration < max_iteration; iteration++) {
         cudaDeviceSynchronize(); // is it necessary before recording values ? is it slowing the
                                  // program down ? --> test
@@ -968,13 +968,16 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             domain_save(currentState.U, dimensions);
         }
 
-        // record sensor output, if sampling time distance since last sample is close enough 
-        if(iteration * dt - t_last_sample >= 1.0 / SAMPLE_RATE) {
-            t_last_sample = iteration * dt;
+        //when is next samples supposed to be ?
+        real_t next_sample_time = (double)n_stored_samples / SAMPLE_RATE;
+        if(iteration * dt >= next_sample_time) {
+            n_stored_samples++;
             set_sensor_value<<<1, 1>>>(currentState, d_current_value_at_sensor, dimensions);
             cudaDeviceSynchronize();
             append_value_to_file(sensor_output_filename, d_current_value_at_sensor);
         }
+
+
 
         // RK4_step(currentState, tmp, K1, K2, K3, K4, dimensions);
         RK4_step_lowstorage(currentState, intermediateState, nextState, dimensions, d_model, sensor);
