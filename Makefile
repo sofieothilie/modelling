@@ -1,4 +1,4 @@
-.PHONY: all run plot clear movie  build
+.PHONY: all run plot clear movie build debug save
 
 all: test
 
@@ -11,7 +11,7 @@ SENSOR_Y = 0.494 #here also
 SENSOR_HEIGHT = 0.023
 
 PPW = 6
-ITERATIONS = 4200#unused
+ITERATIONS = 1#unused, will be overwritten by the correct round trip time
 SNAPSHOT = 5
 PADDING = 5
 
@@ -25,7 +25,7 @@ clear:
 movie:	
 	@echo -n "Started generating movie... "
 	@mkdir -p movies
-	@ffmpeg -y -an -i wave_images/%5d.png -vcodec libx264 -pix_fmt yuv420p -profile:v baseline -level 3 -r 12 movies/wave_$(shell date +%Y%m%d_%H%M%S).mp4 > /dev/null  2>&1
+	@ffmpeg -y -an -i wave_images/%5d.png -vcodec libx264 -pix_fmt yuv420p -profile:v baseline -level 3 -r 12 movies/wave_$(shell date +%Y%m%d_%H%M%S).mp4 > /dev/null 2>&1
 	@echo "Done."
 
 
@@ -46,6 +46,7 @@ run:
 	@mkdir -p sensor_out
 	./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
+#only print launch info, without running it
 info: 
 	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 

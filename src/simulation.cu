@@ -43,6 +43,7 @@ __global__ void emit_source(real_t *const U,
 
     const real_t wavelength = WATER_PARAMETERS.k / SRC_FREQUENCY;
 
+    //phased array parameters
     const int n_source = 7;
     const int spacing = (int) (0.25 * wavelength / dh); // spacing in terms of cells, not distance
 
@@ -227,10 +228,7 @@ __device__ __host__ MediumParameters get_params(const Coords gcoords,
     const real_t model_x_shift = sensor.x - (Nx + 2 * padding) * dh / 2.0;
     const real_t model_z_shift = -sensor.z; // shift the model back
 
-    // printf("Debug: model_x_shift = %.6lf, model_y_shift = %.6lf, model_z_shift = %.6lf\n",
-    //        model_x_shift, model_y_shift, model_z_shift);
 
-    // printf("sensor_z %lf\n", sensor.z);
 
     // thats ugly, but wall just before source
     if(gcoords.z < padding) {
@@ -255,7 +253,7 @@ __device__ __host__ MediumParameters get_params(const Coords gcoords,
     // TODO this might be the wrong side,
     const real_t model_bottom = MODEL_LZ + model[x_idx * MODEL_NY + y_idx];
 
-    // const real_t air_limit = 0.056 + 0.02; // deepness of model + 2cm of air
+    // const real_t air_limit = 0.056 + 0.02; // deepness of model (from utils function RTT) + 2cm of air
 
     if(z < 0 || z >= model_bottom) {
         // if(z < air_limit) {
@@ -960,17 +958,13 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     printf("given sensor y %lf\n", p.sensor.y);
 
-    // the simulation is centered around the source. One middle receiver is also the source, so I
-    // // need to know its index
-    // const int_t central_rcv_index = 13;
-    // const real_t sensor_spacing_y = 0.033;
+    //this code is used to setup the sensor positions and their output files. it varies for the purpose of the simulation
+    //for a simulation with many sensors, check the commit 6b164af19430ed8a79b4d12af37b1660749912f8 "setup for 26 sensors simulation"
+
+
     for(int_t i = 0; i < N_RECEIVERS; i++) {
         real_t sim_center_y = Ny / 2.0 * dh;
-        // real_t sensor_y = sim_center_y - (central_rcv_index - i) * sensor_spacing_y;
-        // int_t sensor_sim_y_idx = sensor_y / dh;
-        // printf("saving pos %d at (%d,%d,%d)\n", i, 0, sensor_sim_y_idx, 0);
         recv_pos[i] = { Nx / 2, Ny/2, 0 };
-        // printf("sensor[%d].y=%lf\n", i, p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
 
         static char tmp[N_RECEIVERS][50];
 
@@ -1021,12 +1015,10 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     int n_stored_samples = 0;
     for(int_t iteration = 0; iteration < max_iteration; iteration++) {
-        cudaDeviceSynchronize(); // is it necessary before recording values ? is it slowing the
-                                 // program down ? --> test
+        cudaDeviceSynchronize(); // is it necessary ?
         gettimeofday(&end, NULL);
         print_progress_bar(iteration, max_iteration, start, end);
         if((iteration % snapshot_freq) == 0) {
-            // printf("iteration %d/%d\n", iteration, max_iteration);
             domain_save(currentState.U, dimensions);
         }
 
@@ -1072,16 +1064,10 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         if(signature_idx < sig_len) {
             real_t src_value = sig[signature_idx];
             emit_source<<<grid, block>>>(nextState.U, dimensions, src_value, source_pos);
-            // printf("emit at (%d,%d,%d)\n", source_pos.x,source_pos.y,source_pos.z);
         }
-
-        // show_sigma<<<grid, block>>>(dimensions, currentState.U, nextState.U, d_model, sensor);
 
         shift_states(&currentState, &nextState);
 
-        // move_buffer_window(&U, &U_prev);
-        // swap_aux_variables(&Psi, &Psi_prev);
-        // swap_aux_variables(&Phi, &Phi_prev);
     }
     cudaDeviceSynchronize();
 
@@ -1090,13 +1076,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
                                dimensions,
                                d_sensor_coords);
     append_value_to_files(sensor_filename, d_current_value_at_sensor);
-
-    // free_simulation_state(currentState);
-    // free_simulation_state(tmp);
-    // free_simulation_state(K1);
-    // free_simulation_state(K2);
-    // free_simulation_state(K3);
-    // free_simulation_state(K4);
 
     free_simulation_state(currentState);
     free_simulation_state(intermediateState);

@@ -22,7 +22,7 @@ typedef enum { BOTTOM, TOP, LEFT, RIGHT, FRONT, BACK } Side;
 typedef enum { X, Y, Z } Component;
 #define N_COMPONENTS (3)
 
-// consists of 6 buffers: the whole shell around our rectangle
+// consists of 6 buffers: the whole shell around our rectanglesetup for 26 sensors simulation
 typedef struct {
     real_t *side[N_SIDES];
 } PML_Variable;
@@ -77,7 +77,7 @@ void free_model(double* model);
 
 #define WATER_PARAMETERS ((MediumParameters) { .k = 1500.0, .rho = 998.0 })
 #define PLASTIC_PARAMETERS ((MediumParameters) { .k = 2600.0, .rho = 1185.0 })
-#define WALL_PARAMETERS ((MediumParameters) { .k = 0, .rho = 1000}) 
+#define WALL_PARAMETERS ((MediumParameters) { .k = 0, .rho = 1000}) //used behind the source
 #define AIR_PARAMETERS ((MediumParameters) {.k = 343.0, .rho  = 1000})
 
 #define SRC_FREQUENCY ((real_t) 1.0e6)
