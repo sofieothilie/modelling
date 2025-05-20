@@ -15,12 +15,20 @@ int main(int argc, char **argv) {
     real_t smallest_wavelength = WATER_PARAMETERS.k / SRC_FREQUENCY;
     real_t dh = smallest_wavelength / options->ppw;
 
-    real_t best_dt = 0.9 * dh / (PLASTIC_PARAMETERS.k * sqrt(3));
-    options->dt = best_dt;
+    real_t dt = 0.9 * dh / (PLASTIC_PARAMETERS.k * sqrt(3));
+    options->dt = dt;
 
     int_t Nx = (int) ceil(options->sim_Lx / dh);
     int_t Ny = (int) ceil(options->sim_Ly / dh);
     int_t Nz = (int) ceil(options->sim_Lz / dh);
+
+    double* model = open_model("data/model.bin");
+
+    real_t RTT_n_iteration = RTT(model, *options) / dt;
+
+    printf("using %lf iterations\n", RTT_n_iteration);
+
+    free_model(model);
 
     Dimensions d = {
         .Nx = Nx,
@@ -45,7 +53,7 @@ int main(int argc, char **argv) {
         .sim_Lx = options->sim_Lx,
         .sim_Ly = options->sim_Ly,
         .sim_Lz = options->sim_Lz,
-        .max_iter = options->max_iteration,
+        .max_iter = RTT_n_iteration,
         .snapshot_freq = options->snapshot_frequency,
         .dt = options->dt,
     };

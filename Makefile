@@ -2,31 +2,30 @@
 
 all: test
 
-SIMULATION_X = 0.05
-SIMULATION_Y = 0.05
-SIMULATION_Z = 0.3
+SIMULATION_X = 0.02
+SIMULATION_Y = 1.0
+SIMULATION_Z = 0.224#0.224
 
-SENSOR_X = 0.385
-SENSOR_Y = 0.56
-SENSOR_HEIGHT = 0.021
+SENSOR_X = 2.615 #still needs to add some shift to be at the center of the receiver, like 1cm
+SENSOR_Y = 0.494 #here also
+SENSOR_HEIGHT = 0.023
 
-PPW = 4
-ITERATIONS = 4000
-SNAPSHOT = 3
+PPW = 6
+ITERATIONS = 4200#unused
+SNAPSHOT = 5
 PADDING = 5
 
 plot: 
 	@echo "Started plotting..."
-	@python3 scripts/plot_all.py $(PPW)  $(SNAPSHOT) $(PADDING)
+	@python3 scripts/plot_all.py $(PPW)  $(SNAPSHOT) $(SIMULATION_X) $(SIMULATION_Y) $(SIMULATION_Z)
 
 clear:
 	@rm -rf wave_data wave_images wave.mp4 libmigration.lib *.obj temp.py build images cuda_build
 
-	
-
 movie:	
 	@echo -n "Started generating movie... "
-	@ffmpeg -y -an -i wave_images/%5d.png -vcodec libx264 -pix_fmt yuv420p -profile:v baseline -level 3 -r 12 movies/wave.mp4 > /dev/null  2>&1
+	@mkdir -p movies
+	@ffmpeg -y -an -i wave_images/%5d.png -vcodec libx264 -pix_fmt yuv420p -profile:v baseline -level 3 -r 12 movies/wave_$(shell date +%Y%m%d_%H%M%S).mp4 > /dev/null  2>&1
 	@echo "Done."
 
 
@@ -39,7 +38,7 @@ build: src/argument_utils.c src/model_cli.c src/getopt.c src/memory_management.c
 	@echo "Done."
 
 debug: src/argument_utils.c src/model_cli.c src/getopt.c src/memory_management.cu src/utils.cu src/simulation.cu
-	@nvcc $(NVCC_FLAGS) $^ -g -G -lineinfo -o  bin/model_cli
+	@nvcc $(NVCC_FLAGS) $^ -g -G -o  bin/model_cli >  /dev/null 
 	@echo "Debug Compilation Successful\n"
 
 run: 

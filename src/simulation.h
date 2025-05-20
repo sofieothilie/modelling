@@ -76,7 +76,9 @@ void free_model(double* model);
 #endif
 
 #define WATER_PARAMETERS ((MediumParameters) { .k = 1500.0, .rho = 998.0 })
-#define PLASTIC_PARAMETERS ((MediumParameters) { .k = 2270.0, .rho = 1185.0 })
+#define PLASTIC_PARAMETERS ((MediumParameters) { .k = 2600.0, .rho = 1185.0 })
+#define WALL_PARAMETERS ((MediumParameters) { .k = 0, .rho = 1000}) 
+#define AIR_PARAMETERS ((MediumParameters) {.k = 343.0, .rho  = 1000})
 
 #define SRC_FREQUENCY ((real_t) 1.0e6)
 #define SAMPLE_RATE ((real_t) (8.0 * SRC_FREQUENCY))
@@ -88,3 +90,5 @@ void free_model(double* model);
 #define MODEL_LX 3.0
 #define MODEL_LY 1.0
 #define MODEL_LZ 0.2
+
+#define N_RECEIVERS 26

@@ -1,5 +1,6 @@
 #pragma once
 #include "simulation.h"
+#include "argument_utils.h"
 #include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,12 +24,15 @@ inline void gpuAssert(const cudaError_t code, const char *file, const int line) 
 int init_cuda();
 
 void print_progress_bar(int current_iteration, int total_iterations, struct timeval start, struct  timeval now);
+Coords PositionToCoords(Position p, Dimensions d);
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void print_start_info(Dimensions dimensions);
+real_t RTT(double *model, OPTIONS options);
 
 #ifdef __cplusplus
 }

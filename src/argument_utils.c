@@ -88,7 +88,6 @@ OPTIONS
                     break;
                 case 'Z':
                     sensor.z = strtod(optarg, &endptr);
-                    printf("parsed sensor z: %lf\n",  sensor.z);
                     if(endptr == optarg) {
                         help(argv[0], c, optarg);
                         return NULL;

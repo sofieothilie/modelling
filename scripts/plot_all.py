@@ -9,6 +9,7 @@ from matplotlib.colors import SymLogNorm
 from concurrent.futures import ProcessPoolExecutor
 from mpl_toolkits.mplot3d import Axes3D
 from tqdm import tqdm
+from math import ceil
 
 M = 100
 N = 100
@@ -58,30 +59,35 @@ def scale(x):
     return  x *dh*1e2
 
 def plot_data_2d(file_path, output_path):
-    data = pd.read_csv(file_path, sep=' ', dtype=np.float64)
-    global padding
 
-    
-    x0 = scale(-padding)
-    y0 = scale(-padding)
         
-    Lx =  scale(data.shape[1]) +x0
-    Lz = scale( data.shape[0]) +y0
-    plt.imshow(data, norm=SymLogNorm(linthresh=1e-3, vmin=-1, vmax=1), cmap='seismic' , extent=[x0, Lx, Lz, y0])
+    global Nx 
+    global Ny 
+    global Nz 
+
+    global dh
+    global ppw
+    # print(dh)
+    step = ppw / 2
+
+    data = np.fromfile(file_path, dtype=np.float32).reshape(ceil(Nz/step), ceil(Ny/step))
+    # Keep only the region of x from 1000 to 1500
+    # data = data.iloc[:, 1000:1500]
+
+    # print(data.min())
+
+
+        
+    Lx =  step*scale(data.shape[1])
+    Lz = step*scale( data.shape[0])
+
+    plt.imshow(data, norm=SymLogNorm(linthresh=1e-5, vmin=-1, vmax=1), cmap='seismic' , extent=[0, Lx, Lz, 0])
     plt.xlabel("X (cm)")
     plt.ylabel("Y (cm)")
 
     # plt.imshow(data,vmin=-0.1, vmax=0.1, cmap='seismic')
     plt.colorbar()
     
-    
-    global dt
-    rect = plt.Rectangle(
-        (0,0),  # Bottom-left corner
-        scale((data.shape[1] - 2 * padding)),  # Width
-        scale((data.shape[0] - 2 * padding)),  # Height
-        linewidth=1, edgecolor='green', facecolor='none', linestyle='dotted'
-    )
     
 
     
@@ -110,8 +116,6 @@ def plot_data_2d(file_path, output_path):
     )
     
     # Draw an empty rectangle with padding from each border
-
-    plt.gca().add_patch(rect)
     
     plt.savefig(output_path)
     plt.close()
@@ -157,16 +161,21 @@ def main():
     if not os.path.isdir(data_folder):
         print(f"Error: Data folder {data_folder} does not exist.")
         return
-    
+    global ppw
     ppw = float(sys.argv[1])
     global snapshots
     snapshots =  int(sys.argv[2])
     global dt
-    global padding 
-    padding = int(sys.argv[3])
     
     global dh 
     dh = 1500.0 / 1e6 / ppw 
+
+    global Nx 
+    global Ny 
+    global Nz 
+    Nx = int(float(sys.argv[3]) / dh)
+    Ny = int(float(sys.argv[4]) / dh)
+    Nz = int(float(sys.argv[5]) / dh)
 
     dt = 0.9 * dh / (2270 * np.sqrt(3))
     
