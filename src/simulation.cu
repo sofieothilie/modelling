@@ -961,23 +961,23 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     printf("given sensor y %lf\n", p.sensor.y);
 
     // the simulation is centered around the source. One middle receiver is also the source, so I
-    // need to know its index
-    const int_t central_rcv_index = 13;
-    const real_t sensor_spacing_y = 0.033;
+    // // need to know its index
+    // const int_t central_rcv_index = 13;
+    // const real_t sensor_spacing_y = 0.033;
     for(int_t i = 0; i < N_RECEIVERS; i++) {
         real_t sim_center_y = Ny / 2.0 * dh;
-        real_t sensor_y = sim_center_y - (central_rcv_index - i) * sensor_spacing_y;
-        int_t sensor_sim_y_idx = sensor_y / dh;
-        printf("saving pos %d at (%d,%d,%d)\n", i, 0, sensor_sim_y_idx, 0);
-        recv_pos[i] = { Nx / 2, sensor_sim_y_idx, 0 };
-        printf("sensor[%d].y=%lf\n", i, p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
+        // real_t sensor_y = sim_center_y - (central_rcv_index - i) * sensor_spacing_y;
+        // int_t sensor_sim_y_idx = sensor_y / dh;
+        // printf("saving pos %d at (%d,%d,%d)\n", i, 0, sensor_sim_y_idx, 0);
+        recv_pos[i] = { Nx / 2, Ny/2, 0 };
+        // printf("sensor[%d].y=%lf\n", i, p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
 
         static char tmp[N_RECEIVERS][50];
 
         sprintf(tmp[i],
                 "sensor_out/sensor_%.2lf_%.2lfd.dat",
                 p.sensor.x,
-                p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
+                p.sensor.y);
         sensor_filename[i] = tmp[i];
 
         // overwrite last output file, to not append to it.

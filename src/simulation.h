@@ -91,4 +91,4 @@ void free_model(double* model);
 #define MODEL_LY 1.0
 #define MODEL_LZ 0.2
 
-#define N_RECEIVERS 26
+#define N_RECEIVERS 1

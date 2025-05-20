@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Simulation constants
-SIMULATION_X=0.03
-SIMULATION_Y=0.03
-SIMULATION_Z=0.18
+SIMULATION_X=0.01
+SIMULATION_Y=0.05
+SIMULATION_Z=0.224
 
 SENSOR_HEIGHT=0.023
 
 PPW=8
-ITERATIONS=4200
+ITERATIONS=1#unused
 SNAPSHOT=5
 PADDING=5
 
@@ -18,7 +18,9 @@ rm sensor_out/*
 
 for i in $(seq 0 25); do
     SENSOR_Y=$(echo "scale=6; 0.065 + $i * 0.033" | bc -l)
-
+    
+    mkdir -p wave_data
+    mkdir -p sensor_out
     ./bin/model_cli \
         -x "$SIMULATION_X" \
         -y "$SIMULATION_Y" \
@@ -31,5 +33,6 @@ for i in $(seq 0 25); do
         -s "$SNAPSHOT" \
         --padding "$PADDING" \
 
+    make save path="simulation_z0_ppw8_x.005_y.02/sensor_${SENSOR_Y}"
     echo "$SENSOR_Y done."
 done

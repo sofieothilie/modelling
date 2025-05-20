@@ -218,7 +218,7 @@ real_t RTT(double *model, OPTIONS options) {
         0.5 * vertical_travel_time * max(options.sim_Lx, options.sim_Ly) / options.sim_Lz;
 
     real_t emissions_latency = 3.125e-5; // 250 samples at 8Mhz
-    real_t safety_latency =  3*emissions_latency;
+    real_t safety_latency =  5*emissions_latency;
 
     real_t total_sim_time = 2
                               * sqrt(vertical_travel_time * vertical_travel_time

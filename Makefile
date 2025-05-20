@@ -3,7 +3,7 @@
 all: test
 
 SIMULATION_X = 0.02
-SIMULATION_Y = 1.0
+SIMULATION_Y = 0.05
 SIMULATION_Z = 0.224#0.224
 
 SENSOR_X = 2.615 #still needs to add some shift to be at the center of the receiver, like 1cm
@@ -43,11 +43,22 @@ debug: src/argument_utils.c src/model_cli.c src/getopt.c src/memory_management.c
 
 run: 
 	@mkdir -p wave_data
-	@./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
+	@mkdir -p sensor_out
+	./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
 info: 
 	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
+save:
+	@if [ -z "$(path)" ]; then \
+		echo "Error: filename parameter is required. Use 'make save path=<name>'"; \
+		exit 1; \
+	fi
+	@echo -n "Saving data... "
+	@mkdir -p $(path)
+	@mv wave_data $(path)/wavefield
+	@mv sensor_out $(path)/sensor_out
+	@echo "Done."
 
 
 test: clear build run plot movie
