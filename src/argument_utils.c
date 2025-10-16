@@ -21,6 +21,7 @@ OPTIONS
     int_t padding = 5;
     int_t snapshot_frequency = 10;
     int_t print_info = 0;
+    int_t RTM = 0;
 
     static struct option const long_options[] = {
         { "help", no_argument, 0, '?' },
@@ -36,10 +37,11 @@ OPTIONS
         { "sensor_x", required_argument, 0, 'X' },
         { "sensor_y", required_argument, 0, 'Y' },
         { "sensor_z", required_argument, 0, 'Z' },
-        { 0, 0, 0, 0 }
+        { 0, 0, 0, 0 },
+        { "RTM", no_argument, 0, 'R' },
     };
 
-    static char const *short_options = "?x:y:z:p:P:t:i:s:I:X:Y:Z:";
+    static char const *short_options = "?x:y:z:p:P:t:i:s:I:X:Y:Z:R:";
     {
         char *endptr;
         int c;
@@ -138,6 +140,10 @@ OPTIONS
                     printf("caught an I\n");
                     print_info = 1;
                     break;
+                case 'R':
+                    printf("caught an R\n");
+                    RTM = 1;
+                    break;
                 default:
                     abort();
             }
@@ -162,6 +168,7 @@ OPTIONS
     args_parsed->max_iteration = max_iteration;
     args_parsed->snapshot_frequency = snapshot_frequency;
     args_parsed->sensor = sensor;
+    args_parsed->RTM = RTM;
 
     return args_parsed;
 }

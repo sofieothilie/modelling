@@ -1081,3 +1081,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     return 0;
 }
+
+extern "C" int simulate_rtm(const simulation_parameters p) {
+    printf("Simulating RTM...\n");
+    return 0;
+}

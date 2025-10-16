@@ -14,6 +14,7 @@ PPW = 6
 ITERATIONS = 1#unused, will be overwritten by the correct round trip time
 SNAPSHOT = 5
 PADDING = 5
+RTM = 1
 
 plot: 
 	@echo "Started plotting..."
@@ -44,7 +45,7 @@ debug: src/argument_utils.c src/model_cli.c src/getopt.c src/memory_management.c
 run: 
 	@mkdir -p wave_data
 	@mkdir -p sensor_out
-	./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
+	./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING) -R $(RTM)
 
 #only print launch info, without running it
 info: 
