@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
 #include "simulation.h"
+#include <stdint.h>
 
 typedef struct options_struct {
     real_t sim_Lx, sim_Ly, sim_Lz;
@@ -14,7 +14,6 @@ typedef struct options_struct {
     int print_info;
 } OPTIONS;
 
+OPTIONS *parse_args(int argc, char **argv);
 
-OPTIONS *parse_args ( int argc, char **argv );
-
-void help ( char const *exec, char const opt, char const *optarg );
+void help(char const *exec, char const opt, char const *optarg);

@@ -40,11 +40,11 @@ PML_Variable allocate_pml_variables(const Dimensions dimensions) {
     PML_Variable variable = { 0 };
 
     for(Side side = BOTTOM; side < N_SIDES; incSide(side)) {
-            size_t size = get_alloc_side_size(dimensions, side);
+        size_t size = get_alloc_side_size(dimensions, side);
 
-            cudaErrorCheck(cudaMalloc(&(variable.side[side]), size * sizeof(real_t)));
-            cudaErrorCheck(cudaMemset(variable.side[side], 0, size * sizeof(real_t)));
-        }
+        cudaErrorCheck(cudaMalloc(&(variable.side[side]), size * sizeof(real_t)));
+        cudaErrorCheck(cudaMemset(variable.side[side], 0, size * sizeof(real_t)));
+    }
 
     return variable;
 }
@@ -84,14 +84,14 @@ void free_simulation_state(SimulationState s) {
     free_pml_variables(s.Phi);
 }
 
-double* open_model(const char* filename){
+double *open_model(const char *filename) {
     FILE *model_file = fopen(filename, "rb");
     if(!model_file) {
         perror("Failed to open file");
         return NULL;
     }
 
-    double *model = (double*) calloc(MODEL_NX * MODEL_NY, sizeof(double));
+    double *model = (double *) calloc(MODEL_NX * MODEL_NY, sizeof(double));
 
     if(model == NULL) {
         perror("Failed to allocate model memory");
@@ -113,6 +113,6 @@ double* open_model(const char* filename){
     return model;
 }
 
-void free_model(double* model){
+void free_model(double *model) {
     free(model);
-} 
+}

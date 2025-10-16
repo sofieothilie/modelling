@@ -1,9 +1,9 @@
 #pragma once
-#include "simulation.h"
 #include "argument_utils.h"
-#include <sys/time.h>
+#include "simulation.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
 #define WALLTIME(t) ((double) (t).tv_sec + 1e-6 * (double) (t).tv_usec)
 
@@ -23,9 +23,11 @@ inline void gpuAssert(const cudaError_t code, const char *file, const int line) 
 
 int init_cuda();
 
-void print_progress_bar(int current_iteration, int total_iterations, struct timeval start, struct  timeval now);
+void print_progress_bar(int current_iteration,
+                        int total_iterations,
+                        struct timeval start,
+                        struct timeval now);
 Coords PositionToCoords(Position p, Dimensions d);
-
 
 #ifdef __cplusplus
 extern "C" {

@@ -43,7 +43,7 @@ __global__ void emit_source(real_t *const U,
 
     const real_t wavelength = WATER_PARAMETERS.k / SRC_FREQUENCY;
 
-    //phased array parameters
+    // phased array parameters
     const int n_source = 7;
     const int spacing = (int) (0.25 * wavelength / dh); // spacing in terms of cells, not distance
 
@@ -228,8 +228,6 @@ __device__ __host__ MediumParameters get_params(const Coords gcoords,
     const real_t model_x_shift = sensor.x - (Nx + 2 * padding) * dh / 2.0;
     const real_t model_z_shift = -sensor.z; // shift the model back
 
-
-
     // thats ugly, but wall just before source
     if(gcoords.z < padding) {
         return WALL_PARAMETERS;
@@ -253,7 +251,8 @@ __device__ __host__ MediumParameters get_params(const Coords gcoords,
     // TODO this might be the wrong side,
     const real_t model_bottom = MODEL_LZ + model[x_idx * MODEL_NY + y_idx];
 
-    // const real_t air_limit = 0.056 + 0.02; // deepness of model (from utils function RTT) + 2cm of air
+    // const real_t air_limit = 0.056 + 0.02; // deepness of model (from utils function RTT) + 2cm
+    // of air
 
     if(z < 0 || z >= model_bottom) {
         // if(z < air_limit) {
@@ -958,20 +957,17 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
     printf("given sensor y %lf\n", p.sensor.y);
 
-    //this code is used to setup the sensor positions and their output files. it varies for the purpose of the simulation
-    //for a simulation with many sensors, check the commit 6b164af19430ed8a79b4d12af37b1660749912f8 "setup for 26 sensors simulation"
-
+    // this code is used to setup the sensor positions and their output files. it varies for the
+    // purpose of the simulation for a simulation with many sensors, check the commit
+    // 6b164af19430ed8a79b4d12af37b1660749912f8 "setup for 26 sensors simulation"
 
     for(int_t i = 0; i < N_RECEIVERS; i++) {
         real_t sim_center_y = Ny / 2.0 * dh;
-        recv_pos[i] = { Nx / 2, Ny/2, 0 };
+        recv_pos[i] = { Nx / 2, Ny / 2, 0 };
 
         static char tmp[N_RECEIVERS][50];
 
-        sprintf(tmp[i],
-                "sensor_out/sensor_%.2lf_%.2lfd.dat",
-                p.sensor.x,
-                p.sensor.y);
+        sprintf(tmp[i], "sensor_out/sensor_%.2lf_%.2lfd.dat", p.sensor.x, p.sensor.y);
         sensor_filename[i] = tmp[i];
 
         // overwrite last output file, to not append to it.
@@ -1067,7 +1063,6 @@ extern "C" int simulate_wave(const simulation_parameters p) {
         }
 
         shift_states(&currentState, &nextState);
-
     }
     cudaDeviceSynchronize();
 

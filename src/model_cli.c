@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
     int_t Ny = (int) ceil(options->sim_Ly / dh);
     int_t Nz = (int) ceil(options->sim_Lz / dh);
 
-    double* model = open_model("data/model.bin");
+    double *model = open_model("data/model.bin");
 
     real_t RTT_n_iteration = RTT(model, *options) / dt;
 
@@ -45,7 +45,6 @@ int main(int argc, char **argv) {
         // do not run, only print launch informations
         return 0;
     }
-
 
     simulation_parameters p = {
         .dimensions = d,

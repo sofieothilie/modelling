@@ -182,7 +182,8 @@ real_t RTT(double *model, OPTIONS options) {
             const int_t x_idx = x * MODEL_NX / MODEL_LX;
             const int_t y_idx = y * MODEL_NY / MODEL_LY;
 
-            const real_t model_depth = model_start + MODEL_LZ + (double)model[x_idx * MODEL_NY + y_idx];
+            const real_t model_depth =
+                model_start + MODEL_LZ + (double) model[x_idx * MODEL_NY + y_idx];
 
             // printf("model value %lf\n", model[x_idx * MODEL_NY + y_idx]);
             // capture smallest value
@@ -196,9 +197,9 @@ real_t RTT(double *model, OPTIONS options) {
 
     printf("model bottom spans {%lf - %lf}\n", model_shallowest_end, model_deepest_end);
 
-
     if(model_shallowest_end > z_total) {
-        printf("[Note] Simulation not deep enough, the plastic goes %lf lower than that!\n", model_shallowest_end  - z_total);
+        printf("[Note] Simulation not deep enough, the plastic goes %lf lower than that!\n",
+               model_shallowest_end - z_total);
         model_shallowest_end = z_total; // do not simulate too much
     }
     if(model_deepest_end < z_total) {
@@ -210,7 +211,6 @@ real_t RTT(double *model, OPTIONS options) {
     real_t distance_in_plastic = model_shallowest_end - model_start;
     real_t distance_in_water = model_deepest_end - distance_in_plastic;
 
-
     real_t vertical_travel_time =
         distance_in_plastic / PLASTIC_PARAMETERS.k + distance_in_water / WATER_PARAMETERS.k;
     // horoizontal travel approx, supposed proportional to vertical
@@ -218,7 +218,7 @@ real_t RTT(double *model, OPTIONS options) {
         0.5 * vertical_travel_time * max(options.sim_Lx, options.sim_Ly) / options.sim_Lz;
 
     real_t emissions_latency = 3.125e-5; // 250 samples at 8Mhz
-    real_t safety_latency =  5*emissions_latency;
+    real_t safety_latency = 5 * emissions_latency;
 
     real_t total_sim_time = 2
                               * sqrt(vertical_travel_time * vertical_travel_time

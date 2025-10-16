@@ -14,8 +14,6 @@ typedef struct {
     real_t dt;
 } Dimensions;
 
-
-
 typedef enum { BOTTOM, TOP, LEFT, RIGHT, FRONT, BACK } Side;
 #define N_SIDES (6)
 
@@ -66,10 +64,11 @@ extern "C" {
 
 int_t get_domain_size(const Dimensions dimensions);
 int simulate_wave(simulation_parameters p);
+int simulate_rtm(simulation_parameters p);
 SimulationState allocate_simulation_state(const Dimensions dimensions);
 void free_simulation_state(SimulationState s);
-double* open_model(const char* filename);
-void free_model(double* model);
+double *open_model(const char *filename);
+void free_model(double *model);
 
 #ifdef __cplusplus
 }
@@ -77,13 +76,13 @@ void free_model(double* model);
 
 #define WATER_PARAMETERS ((MediumParameters) { .k = 1500.0, .rho = 998.0 })
 #define PLASTIC_PARAMETERS ((MediumParameters) { .k = 2600.0, .rho = 1185.0 })
-#define WALL_PARAMETERS ((MediumParameters) { .k = 0, .rho = 1000}) //used behind the source
-#define AIR_PARAMETERS ((MediumParameters) {.k = 343.0, .rho  = 1000})
+#define WALL_PARAMETERS ((MediumParameters) { .k = 0, .rho = 1000 }) // used behind the source
+#define AIR_PARAMETERS ((MediumParameters) { .k = 343.0, .rho = 1000 })
 
 #define SRC_FREQUENCY ((real_t) 1.0e6)
 #define SAMPLE_RATE ((real_t) (8.0 * SRC_FREQUENCY))
 
-//make it a parameter or smth
+// make it a parameter or smth
 #define MODEL_NX 1201
 #define MODEL_NY 401
 
