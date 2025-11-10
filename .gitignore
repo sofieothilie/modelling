@@ -4,6 +4,8 @@ ml_wave*
 movies_ml
 cuda_build
 *.ipynb
+data/extracted
+data/new
 
 __pycache__
 .vscode
