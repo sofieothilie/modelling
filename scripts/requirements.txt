@@ -1,0 +1,8 @@
+matplotlib
+scipy
+pandas
+tqdm
+segyio
+dill
+opencv-python
+joblib
