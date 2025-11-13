@@ -15,6 +15,7 @@ build
 compare
 *.lib
 *.obj
+venv
 
 movies
 bin
