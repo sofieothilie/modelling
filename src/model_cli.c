@@ -55,8 +55,15 @@ int main(int argc, char **argv) {
         .max_iter = RTT_n_iteration,
         .snapshot_freq = options->snapshot_frequency,
         .dt = options->dt,
+        .RTM = options->RTM,
     };
-    int err = simulate_wave(p);
+
+    if (options->RTM) {
+        int err = simulate_rtm(p);
+    }
+    else {
+        int err = simulate_wave(p);
+    }
 
     return 0;
 }

@@ -56,6 +56,7 @@ typedef struct {
     Position sensor;
     real_t dt;
     int max_iter, snapshot_freq;
+    int RTM;
 } simulation_parameters;
 
 #ifdef __cplusplus
