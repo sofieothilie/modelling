@@ -838,6 +838,63 @@ int signature(real_t **sig_buf) {
     return (int) num_doubles;
 }
 
+int signature_receivers(real_t **sig_buf) {
+    FILE *f = fopen("data/extracted/150kHz_Single_source_file_traces.bin", "rb");
+    if(!f) {
+        perror("Failed to open file");
+        return -1;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    if(fsize < 0) {
+        perror("ftell failed");
+        fclose(f);
+        return -1;
+    }
+    rewind(f);
+
+    uint32_t n_traces, n_samples;
+    float dt;
+    fread(&n_traces, 4, 1, f);
+    fread(&n_samples, 4, 1, f);
+    fread(&dt, 4, 1, f);
+
+    printf("n_traces=%u, n_samples=%u, dt=%g\n",
+          n_traces,
+          n_samples,
+          dt);
+
+    size_t rec_bytes = (n_samples) * sizeof(float);
+    float *buf = (float *)malloc(rec_bytes);
+    *sig_buf = (real_t *) calloc(n_samples, sizeof(real_t));
+
+    if(!buf) {
+        perror("Failed to allocate double_buffer");
+        fclose(f);
+        return -1;
+    }
+
+    for (size_t i=0; i< n_traces; ++i) {
+        float s_x, s_y;
+        fread(&s_x, 4, 1, f);
+        fread(&s_y, 4, 1, f);
+        printf("Source position: x=%g, y=%g\n", s_x, s_y);
+        size_t trace = fread(buf, 1, rec_bytes, f);
+        if (trace != rec_bytes) perror("Failed to read full trace");
+
+        for(size_t i = 0; i < n_samples; i++) {
+            (*sig_buf)[i] = (real_t) buf[i];
+        }
+        break; // only first trace for now
+
+    }
+
+    free(buf);
+    fclose(f);
+    return n_samples;
+}
+
 __global__ void show_sigma(Dimensions dimensions,
                            real_t *U,
                            real_t *U_prev,
