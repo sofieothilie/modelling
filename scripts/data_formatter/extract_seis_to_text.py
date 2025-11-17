@@ -15,6 +15,42 @@ from seispy import Seismic
 # | n_traces | n_samples | dt | sx_1 | sy_1 | samples_1... | sx_2 | sy_2 | samples_2... | ... | sx_n | sy_n | samples_n... |
 
 
+"""
+ImHex pattern for the output binary files:
+#pragma endian little
+
+u32 n_traces out;
+u32 n_samples out;
+
+struct File { // Total: 54 bytes
+ u32 n_traces; // Magic identifier: 0x4d42
+ u32 n_samples;
+ float dt;
+
+};
+
+
+File file @ 0x00;
+n_traces = file.n_traces;
+n_samples = file.n_samples;
+
+struct JPGHeader {
+    u16 sof0;
+    u16 segmentlength;
+    u8 bitsprpixel;
+    u16 height;
+    u16 width;
+    u8 n_components;
+};
+
+struct trace {
+    float sx;
+    float sy;
+    float samples[n_samples];
+};
+
+trace traces[file.n_traces] @ addressof(file) + sizeof(File);
+"""
 
 # ----- user-editable -----
 paths = [
@@ -51,13 +87,13 @@ def write_single_file(path, sx_arr, sy_arr, dt, traces):
     # prepare header
     header = struct.pack('<II f', n_traces, n_samples, float(dt))  # uint32, uint32, float32
 
-    with open(path, 'wb') as fh:
-        fh.write(header)
+    with open(path, 'wb') as f:
+        f.write(header)
         # write records: [sx, sy, sample...]
         for i in range(n_traces):
             meta = np.array([float(sx_arr[i]), float(sy_arr[i])], dtype='<f4')
-            fh.write(meta.tobytes())
-            fh.write(traces[i].tobytes())
+            f.write(meta.tobytes())
+            f.write(traces[i].tobytes())
 
 # normalise input paths for portability
 paths = [os.path.normpath(p) for p in paths]
@@ -119,3 +155,4 @@ for p in paths:
     write_single_file(traces_bin, header.get("sourceX", []), header.get("sourceY", []), dt, traces)
     
     print("  DONE for", name)
+
