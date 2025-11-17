@@ -1146,5 +1146,156 @@ extern "C" int simulate_wave(const simulation_parameters p) {
 
 extern "C" int simulate_rtm(const simulation_parameters p) {
     printf("Simulating RTM...\n");
+
+    Dimensions dimensions = p.dimensions;
+
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+    const real_t dh = dimensions.dh;
+
+    if(!init_cuda()) {
+        fprintf(stderr, "Could not initialize CUDA\n");
+        exit(EXIT_FAILURE);
+    }
+
+    SimulationState currentState = allocate_simulation_state(dimensions);
+    SimulationState intermediateState = allocate_simulation_state(dimensions);
+    SimulationState nextState = allocate_simulation_state(dimensions);
+
+    // must be updated
+
+    const real_t dt = p.dt;
+    const int_t max_iteration = p.max_iter;
+    const int_t snapshot_freq = p.snapshot_freq;
+
+    const Coords source_pos = { Nx / 2, Ny / 2, 0 };
+    Coords recv_pos[N_RECEIVERS]; //{Nx/2,Ny/2,0.03/dimensions.dh};
+
+    const char *sensor_filename[N_RECEIVERS];
+
+    printf("given sensor y %lf\n", p.sensor.y);
+
+    for(int_t i = 0; i < N_RECEIVERS; i++) {
+        real_t sim_center_y = Ny / 2.0 * dh;
+        recv_pos[i] = { Nx / 2, Ny/2, 0 };
+
+        static char tmp[N_RECEIVERS][50];
+
+        sprintf(tmp[i],
+                "sensor_out/sensor_%.2lf_%.2lfd.dat",
+                p.sensor.x,
+                p.sensor.y);
+        sensor_filename[i] = tmp[i];
+
+        // overwrite last output file, to not append to it.
+        FILE *f = fopen(sensor_filename[i], "w");
+        fclose(f);
+        f = NULL;
+    }
+
+    Coords *d_sensor_coords = NULL;
+    cudaMalloc(&d_sensor_coords, N_RECEIVERS * sizeof(Coords));
+    cudaMemcpy(d_sensor_coords, recv_pos, sizeof(Coords) * N_RECEIVERS, cudaMemcpyHostToDevice);
+
+    // contains the value at the sensor, will be copied from the gpu every iteration, and written to
+    // file.
+    real_t *d_current_value_at_sensor;
+
+    cudaMalloc(&d_current_value_at_sensor, N_RECEIVERS * sizeof(real_t));
+
+    double *model = open_model("data/model.bin");
+
+    // for  now we put it in global  mem, but if we can  have it small enough (especially the 3d
+    // one, put it in constant memory)
+    // we  can crop on the  simulation space only
+    const Position sensor = p.sensor;
+
+    double *d_model = NULL;
+    cudaErrorCheck(cudaMalloc(&d_model, MODEL_NX * MODEL_NY * sizeof(double)));
+    cudaErrorCheck(
+        cudaMemcpy(d_model, model, MODEL_NX * MODEL_NY * sizeof(double), cudaMemcpyHostToDevice));
+
+    real_t *sig;
+    int sig_len = signature_receivers(&sig);
+
+    struct timeval start, end;
+
+    show_model(dimensions, model, sensor);
+
+    gettimeofday(&start, NULL);
+    printf("Started simulation...\n");
+    
+    int n_stored_samples = 0; //updated for rtm
+    for(int_t iteration = max_iteration-1; iteration >= 0; iteration--) {
+        cudaDeviceSynchronize(); // is it necessary ?
+        gettimeofday(&end, NULL);
+        print_progress_bar(iteration, max_iteration, start, end);
+        if((iteration % snapshot_freq) == 0) {
+            domain_save(currentState.U, dimensions);
+        }
+
+        // when is next samples supposed to be ?
+        real_t next_sample_time = (double) n_stored_samples / SAMPLE_RATE; //updated for rtm
+        if(iteration * dt >= next_sample_time) { //update for rtm?
+            n_stored_samples--;
+            get_sensor_value<<<1, 1>>>(currentState,
+                                       d_current_value_at_sensor,
+                                       dimensions,
+                                       d_sensor_coords);
+
+            cudaDeviceSynchronize();
+            append_value_to_files(sensor_filename, d_current_value_at_sensor);
+        }
+
+        RK4_step_lowstorage(currentState,
+                            intermediateState,
+                            nextState,
+                            dimensions,
+                            d_model,
+                            sensor);
+        cudaError_t err = cudaGetLastError();
+        if(err != cudaSuccess) {
+            printf("cuda kernel error: %s\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+
+        real_t src_freq = 1.0e6;
+        real_t src_sampling_rate = 8 * src_freq;
+
+        int signature_idx = (int) (iteration * dt * src_sampling_rate);
+
+        int block_x = 8;
+        int block_y = 8;
+        int block_z = 8;
+        dim3 block(block_x, block_y, block_z);
+        dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
+                  (Ny + 2 * padding + block_y - 1) / block_y,
+                  ((Nz + 2 * padding) + block_z - 1) / block_z);
+
+        if(signature_idx < sig_len) {
+            real_t src_value = sig[signature_idx];
+            emit_source<<<grid, block>>>(nextState.U, dimensions, src_value, source_pos);
+        }
+
+        shift_states(&currentState, &nextState);
+
+    }
+    cudaDeviceSynchronize();
+
+    get_sensor_value<<<1, 1>>>(currentState,
+                               d_current_value_at_sensor,
+                               dimensions,
+                               d_sensor_coords);
+    append_value_to_files(sensor_filename, d_current_value_at_sensor);
+
+    free_simulation_state(currentState);
+    free_simulation_state(intermediateState);
+    free_simulation_state(nextState);
+
+    free_model(model);
+    cudaFree(d_model);
+
     return 0;
 }
