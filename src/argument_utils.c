@@ -141,7 +141,6 @@ OPTIONS
                     print_info = 1;
                     break;
                 case 'R':
-                    printf("caught an R\n");
                     RTM = 1;
                     break;
                 default:

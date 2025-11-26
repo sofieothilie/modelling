@@ -31,13 +31,13 @@ __global__ void emit_source(real_t *const U,
                             const Dimensions dimensions,
                             const real_t value,
                             const Coords source_coords) {
-    const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
-    const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
+    // const int_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    // const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
+    // const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
+    // const int_t Nx = dimensions.Nx;
+    // const int_t Ny = dimensions.Ny;
+    // const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
     const real_t dh = dimensions.dh;
 
@@ -55,7 +55,7 @@ __global__ void emit_source(real_t *const U,
             int idx_i = padding + source_coords.x - (n_source / 2 * spacing) + n_i * spacing;
             int idx_j = padding + source_coords.y - (n_source / 2 * spacing) + n_j * spacing;
 
-            double shift = 0;
+            // double shift = 0;
             // (double) n_j / n_source * 2 * M_PI * 0.7;
             // double sine = sin(2 * M_PI * t * freq - shift);
 
@@ -159,6 +159,9 @@ __device__ bool border_match_component(const Coords gcoords,
         case Z:
             return gcoords.z < dimensions.padding
                 || gcoords.z >= dimensions.Nz + dimensions.padding;
+        default:
+            printf("error in border match component\n");
+            return 0;
     }
 }
 
@@ -220,7 +223,7 @@ __device__ __host__ MediumParameters get_params(const Coords gcoords,
                                                 const Position sensor) {
     const int_t Nx = dimensions.Nx;
     const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
+    // const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
     const real_t dh = dimensions.dh;
 
@@ -577,12 +580,12 @@ __global__ void euler_step(SimulationState deriv,
     const int_t j = blockIdx.y * blockDim.y + threadIdx.y;
     const int_t k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    const real_t dt = dimensions.dt;
+    // const real_t dt = dimensions.dt;
     const real_t dh = dimensions.dh;
 
-    int_t Nx = dimensions.Nx;
-    int_t Ny = dimensions.Ny;
-    int_t Nz = dimensions.Nz;
+    // int_t Nx = dimensions.Nx;
+    // int_t Ny = dimensions.Ny;
+    // int_t Nz = dimensions.Nz;
 
     const Coords gcoords = { .x = i, .y = j, .z = k };
 
@@ -943,11 +946,11 @@ __global__ void get_sensor_value(const SimulationState s,
                                  real_t *sensor_value,
                                  const Dimensions dimensions,
                                  Coords receiver_coords[]) {
-    const int_t Nx = dimensions.Nx;
-    const int_t Ny = dimensions.Ny;
-    const int_t Nz = dimensions.Nz;
+    // const int_t Nx = dimensions.Nx;
+    // const int_t Ny = dimensions.Ny;
+    // const int_t Nz = dimensions.Nz;
     const int_t padding = dimensions.padding;
-    const real_t dh = dimensions.dh;
+    // const real_t dh = dimensions.dh;
 
     for(int_t idx = 0; idx < N_RECEIVERS; idx++) {
 

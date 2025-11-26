@@ -34,18 +34,11 @@ File file @ 0x00;
 n_traces = file.n_traces;
 n_samples = file.n_samples;
 
-struct JPGHeader {
-    u16 sof0;
-    u16 segmentlength;
-    u8 bitsprpixel;
-    u16 height;
-    u16 width;
-    u8 n_components;
-};
-
 struct trace {
-    float sx;
-    float sy;
+    float sx; // x position of source
+    float sy; // y position of source
+    float gx; // x position of receiver
+    float gy; // y position of receiver
     float samples[n_samples];
 };
 
@@ -79,7 +72,7 @@ def is_regular(samples, rel_tol=1e-6, abs_tol=1e-12):
     regular = (max_abs <= abs_tol) or (max_rel <= rel_tol)
     return regular, dt_mean
 
-def write_single_file(path, sx_arr, sy_arr, dt, traces):
+def write_single_file(path, sx_arr, sy_arr, gx_arr, gy_arr, dt, traces):
     # traces: (n_traces, n_samples) float32
     traces = np.asarray(traces, dtype='<f4')
     n_traces, n_samples = traces.shape
@@ -91,7 +84,9 @@ def write_single_file(path, sx_arr, sy_arr, dt, traces):
         f.write(header)
         # write records: [sx, sy, sample...]
         for i in range(n_traces):
-            meta = np.array([float(sx_arr[i]), float(sy_arr[i])], dtype='<f4')
+            header = struct.pack('<II f', n_traces, n_samples, float(dt))  # uint32, uint32, float32
+
+            meta = np.array([float(sx_arr[i]), float(sy_arr[i]), float(gx_arr[i]), float(gy_arr[i])], dtype='<f4')
             f.write(meta.tobytes())
             f.write(traces[i].tobytes())
 
@@ -152,7 +147,7 @@ for p in paths:
         print(f"  WARNING: n_traces ({n_traces}) does not match header sourceX length ({len(header.get('sourceX', []))}). Exiting.")
         exit()
 
-    write_single_file(traces_bin, header.get("sourceX", []), header.get("sourceY", []), dt, traces)
+    write_single_file(traces_bin, header.get("sourceX", []), header.get("sourceY", []), header.get("groupX", []), header.get("groupY", []), dt, traces)
     
     print("  DONE for", name)
 

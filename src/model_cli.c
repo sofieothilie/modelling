@@ -5,9 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MODEL_Nx 1201
-#define MODEL_Ny 401
-
 int main(int argc, char **argv) {
     OPTIONS *options = parse_args(argc, argv);
 
