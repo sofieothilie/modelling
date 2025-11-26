@@ -3,11 +3,13 @@
 all: test
 
 SIMULATION_X = 0.02
-SIMULATION_Y = 0.05
+SIMULATION_Y = 0.5
 SIMULATION_Z = 0.224#0.224
 
-SENSOR_X = 2.615 #still needs to add some shift to be at the center of the receiver, like 1cm
-SENSOR_Y = 0.494 #here also
+SENSOR_X = 1.40223
+SENSOR_Y = 0.885
+# SENSOR_X = 2.615 #still needs to add some shift to be at the center of the receiver, like 1cm
+# SENSOR_Y = 0.494 #here also
 SENSOR_HEIGHT = 0.023
 
 PPW = 6

@@ -841,7 +841,7 @@ int signature(real_t **sig_buf) {
     return (int) num_doubles;
 }
 
-int signature_receivers(real_t **sig_buf) {
+int traces(real_t **trace_buf) { //simulation_parameters p, real_t **sig_buf) {
     FILE *f = fopen("data/extracted/150kHz_Single_source_file_traces.bin", "rb");
     if(!f) {
         perror("Failed to open file");
@@ -870,7 +870,7 @@ int signature_receivers(real_t **sig_buf) {
 
     size_t rec_bytes = (n_samples) * sizeof(float);
     float *buf = (float *)malloc(rec_bytes);
-    *sig_buf = (real_t *) calloc(n_samples, sizeof(real_t));
+    *trace_buf = (real_t *) calloc(n_samples, sizeof(real_t));
 
     if(!buf) {
         perror("Failed to allocate double_buffer");
@@ -879,15 +879,21 @@ int signature_receivers(real_t **sig_buf) {
     }
 
     for (size_t i=0; i< n_traces; ++i) {
-        float s_x, s_y;
+        float s_x, s_y, g_x, g_y;
         fread(&s_x, 4, 1, f);
         fread(&s_y, 4, 1, f);
-        printf("Source position: x=%g, y=%g\n", s_x, s_y);
+        fread(&g_x, 4, 1, f);
+        fread(&g_y, 4, 1, f);
+        printf("Original source position: x=%g, y=%g, receiver position: x= %g, y=%g\n", s_x, s_y, g_x, g_y);
+        // p.sensor.x = s_x;
+        // p.sensor.y = s_y;
+        // p.receiver.x = g_x;
+        // p.receiver.y = g_y;
         size_t trace = fread(buf, 1, rec_bytes, f);
         if (trace != rec_bytes) perror("Failed to read full trace");
 
         for(size_t i = 0; i < n_samples; i++) {
-            (*sig_buf)[i] = (real_t) buf[i];
+            (*trace_buf)[i] = (real_t) buf[i];
         }
         break; // only first trace for now
 
@@ -1108,10 +1114,8 @@ extern "C" int simulate_wave(const simulation_parameters p) {
             exit(EXIT_FAILURE);
         }
 
-        real_t src_freq = 1.0e6;
-        real_t src_sampling_rate = 8 * src_freq;
 
-        int signature_idx = (int) (iteration * dt * src_sampling_rate);
+        int signature_idx = (int) (iteration * dt * SAMPLE_RATE);
 
         int block_x = 8;
         int block_y = 8;
@@ -1173,8 +1177,8 @@ extern "C" int simulate_rtm(const simulation_parameters p) {
     const int_t max_iteration = p.max_iter;
     const int_t snapshot_freq = p.snapshot_freq;
 
-    const Coords source_pos = { Nx / 2, Ny / 2, 0 };
-    Coords recv_pos[N_RECEIVERS]; //{Nx/2,Ny/2,0.03/dimensions.dh};
+    const Coords source_pos ={ Nx / 2, Ny / 2, 0 }; //{1.40, 0.69, 0.023};//{ Nx / 2, Ny / 2, 0 }; // also must be updated
+    Coords recv_pos[N_RECEIVERS];
 
     const char *sensor_filename[N_RECEIVERS];
 
@@ -1220,28 +1224,29 @@ extern "C" int simulate_rtm(const simulation_parameters p) {
     cudaErrorCheck(
         cudaMemcpy(d_model, model, MODEL_NX * MODEL_NY * sizeof(double), cudaMemcpyHostToDevice));
 
-    real_t *sig;
-    int sig_len = signature_receivers(&sig);
-
+    real_t *trace;
     struct timeval start, end;
+
+    int trace_len = traces(&trace);//, &start, &end); //p, &trace);
+
 
     show_model(dimensions, model, sensor);
 
     gettimeofday(&start, NULL);
     printf("Started simulation...\n");
     
-    int n_stored_samples = 0; //updated for rtm
+    int n_stored_samples = trace_len;
     for(int_t iteration = max_iteration-1; iteration >= 0; iteration--) {
         cudaDeviceSynchronize(); // is it necessary ?
         gettimeofday(&end, NULL);
-        print_progress_bar(iteration, max_iteration, start, end);
+        print_progress_bar((max_iteration - iteration), max_iteration, start, end);
         if((iteration % snapshot_freq) == 0) {
             domain_save(currentState.U, dimensions);
         }
 
         // when is next samples supposed to be ?
         real_t next_sample_time = (double) n_stored_samples / SAMPLE_RATE; //updated for rtm
-        if(iteration * dt >= next_sample_time) { //update for rtm?
+        if(iteration * dt <= next_sample_time) { //update for rtm, when to store samples
             n_stored_samples--;
             get_sensor_value<<<1, 1>>>(currentState,
                                        d_current_value_at_sensor,
@@ -1264,10 +1269,7 @@ extern "C" int simulate_rtm(const simulation_parameters p) {
             exit(EXIT_FAILURE);
         }
 
-        real_t src_freq = 1.0e6;
-        real_t src_sampling_rate = 8 * src_freq;
-
-        int signature_idx = (int) (iteration * dt * src_sampling_rate);
+        int trace_idx = (int) (iteration * dt * SAMPLE_RATE);
 
         int block_x = 8;
         int block_y = 8;
@@ -1277,8 +1279,8 @@ extern "C" int simulate_rtm(const simulation_parameters p) {
                   (Ny + 2 * padding + block_y - 1) / block_y,
                   ((Nz + 2 * padding) + block_z - 1) / block_z);
 
-        if(signature_idx < sig_len) {
-            real_t src_value = sig[signature_idx];
+        if(trace_idx < trace_len) {
+            real_t src_value = trace[trace_idx];
             emit_source<<<grid, block>>>(nextState.U, dimensions, src_value, source_pos);
         }
 
@@ -1298,6 +1300,7 @@ extern "C" int simulate_rtm(const simulation_parameters p) {
     free_simulation_state(nextState);
 
     free_model(model);
+    free(trace);
     cudaFree(d_model);
 
     return 0;

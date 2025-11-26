@@ -80,7 +80,8 @@ void free_model(double *model);
 #define WALL_PARAMETERS ((MediumParameters) { .k = 0, .rho = 1000 }) // used behind the source
 #define AIR_PARAMETERS ((MediumParameters) { .k = 343.0, .rho = 1000 })
 
-#define SRC_FREQUENCY ((real_t) 1.0e6)
+// #define SRC_FREQUENCY ((real_t) 1.0e6)
+#define SRC_FREQUENCY ((real_t) 1.5e5)
 #define SAMPLE_RATE ((real_t) (8.0 * SRC_FREQUENCY))
 
 // make it a parameter or smth

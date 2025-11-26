@@ -70,7 +70,28 @@ def plot_data_2d(file_path, output_path):
     # print(dh)
     step = ppw / 2
 
-    data = np.fromfile(file_path, dtype=np.float32).reshape(ceil(Nz/step), ceil(Ny/step))
+    data_raw = np.fromfile(file_path, dtype=np.float32)
+    n = data_raw.size
+    # find factor pairs of n
+    pairs = []
+    for r in range(1, int(np.sqrt(n)) + 1):
+        if n % r == 0:
+            c = n // r
+            pairs.append((r, c))
+            if r != c:
+                pairs.append((c, r))
+    if not pairs:
+        # fallback: reshape to a single row
+        rows, cols = 1, n
+    else:
+        # prefer pair closest to expected aspect ratio Nz/Ny (rows ~ Nz/step, cols ~ Ny/step)
+        desired_ratio = (Nz / step) / (Ny / step) if (Ny > 0 and step > 0) else None
+        if desired_ratio:
+            rows, cols = min(pairs, key=lambda rc: abs((rc[0] / rc[1]) - desired_ratio))
+        else:
+            rows, cols = max(pairs)  # take the pair with largest rows
+    data = data_raw.reshape(rows, cols)
+
     # Keep only the region of x from 1000 to 1500
     # data = data.iloc[:, 1000:1500]
 
@@ -167,8 +188,9 @@ def main():
     snapshots =  int(sys.argv[2])
     global dt
     
-    global dh 
-    dh = 1500.0 / 1e6 / ppw 
+    global dh
+    freq = 150e3 #1e6
+    dh = 1500.0 / freq / ppw 
 
     global Nx 
     global Ny 

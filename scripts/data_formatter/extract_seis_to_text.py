@@ -22,8 +22,8 @@ ImHex pattern for the output binary files:
 u32 n_traces out;
 u32 n_samples out;
 
-struct File { // Total: 54 bytes
- u32 n_traces; // Magic identifier: 0x4d42
+struct File {
+ u32 n_traces;
  u32 n_samples;
  float dt;
 
