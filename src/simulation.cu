@@ -793,7 +793,7 @@ void domain_save(const real_t *const d_buffer, const Dimensions dimensions) {
 }
 
 int signature(real_t **sig_buf) {
-    FILE *f = fopen("data/signature.dat", "rb");
+    FILE *f = fopen("data/signature150.dat", "rb");
     if(!f) {
         perror("Failed to open file");
         return -1;
@@ -1027,17 +1027,25 @@ extern "C" int simulate_wave(const simulation_parameters p) {
     //this code is used to setup the sensor positions and their output files. it varies for the purpose of the simulation
     //for a simulation with many sensors, check the commit 6b164af19430ed8a79b4d12af37b1660749912f8 "setup for 26 sensors simulation"
 
-
+    // FROM THAT COMMIT
+    // the simulation is centered around the source. One middle receiver is also the source, so I
+    // need to know its index
+    const int_t central_rcv_index = 13;
+    const real_t sensor_spacing_y = 0.033;
     for(int_t i = 0; i < N_RECEIVERS; i++) {
         real_t sim_center_y = Ny / 2.0 * dh;
-        recv_pos[i] = { Nx / 2, Ny/2, 0 };
+        real_t sensor_y = sim_center_y - (central_rcv_index - i) * sensor_spacing_y;
+        int_t sensor_sim_y_idx = sensor_y / dh;
+        printf("saving pos %d at (%d,%d,%d)\n", i, 0, sensor_sim_y_idx, 0);
+        recv_pos[i] = { Nx / 2, sensor_sim_y_idx, 0 };
+        printf("sensor[%d].y=%lf\n", i, p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
 
         static char tmp[N_RECEIVERS][50];
 
         sprintf(tmp[i],
                 "sensor_out/sensor_%.2lf_%.2lfd.dat",
                 p.sensor.x,
-                p.sensor.y);
+                p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
         sensor_filename[i] = tmp[i];
 
         // overwrite last output file, to not append to it.
@@ -1171,29 +1179,36 @@ extern "C" int simulate_rtm(const simulation_parameters p) {
     SimulationState intermediateState = allocate_simulation_state(dimensions);
     SimulationState nextState = allocate_simulation_state(dimensions);
 
-    // must be updated
 
     const real_t dt = p.dt;
     const int_t max_iteration = p.max_iter;
     const int_t snapshot_freq = p.snapshot_freq;
 
-    const Coords source_pos ={ Nx / 2, Ny / 2, 0 }; //{1.40, 0.69, 0.023};//{ Nx / 2, Ny / 2, 0 }; // also must be updated
+    const Coords source_pos ={ Nx / 2, Ny / 2, 0 }; // also must be updated
     Coords recv_pos[N_RECEIVERS];
 
     const char *sensor_filename[N_RECEIVERS];
 
     printf("given sensor y %lf\n", p.sensor.y);
 
+    // the simulation is centered around the source. One middle receiver is also the source, so I
+    // need to know its index
+    const int_t central_rcv_index = 13;
+    const real_t sensor_spacing_y = 0.033;
     for(int_t i = 0; i < N_RECEIVERS; i++) {
         real_t sim_center_y = Ny / 2.0 * dh;
-        recv_pos[i] = { Nx / 2, Ny/2, 0 };
+        real_t sensor_y = sim_center_y - (central_rcv_index - i) * sensor_spacing_y;
+        int_t sensor_sim_y_idx = sensor_y / dh;
+        printf("saving pos %d at (%d,%d,%d)\n", i, 0, sensor_sim_y_idx, 0);
+        recv_pos[i] = { Nx / 2, sensor_sim_y_idx, 0 };
+        printf("sensor[%d].y=%lf\n", i, p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
 
         static char tmp[N_RECEIVERS][50];
 
         sprintf(tmp[i],
                 "sensor_out/sensor_%.2lf_%.2lfd.dat",
                 p.sensor.x,
-                p.sensor.y);
+                p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
         sensor_filename[i] = tmp[i];
 
         // overwrite last output file, to not append to it.

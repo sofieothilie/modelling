@@ -141,7 +141,7 @@ OPTIONS
                     print_info = 1;
                     break;
                 case 'R':
-                    RTM = 1;
+                    RTM = strtol(optarg, &endptr, 10);
                     break;
                 default:
                     abort();
