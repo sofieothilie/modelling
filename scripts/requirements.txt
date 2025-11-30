@@ -6,3 +6,4 @@ segyio
 dill
 opencv-python
 joblib
+numba

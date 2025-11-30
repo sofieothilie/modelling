@@ -103,8 +103,8 @@ def plot_data_2d(file_path, output_path):
     Lz = step*scale( data.shape[0])
 
     plt.imshow(data, norm=SymLogNorm(linthresh=1e-5, vmin=-1, vmax=1), cmap='seismic' , extent=[0, Lx, Lz, 0])
-    plt.xlabel("X (cm)")
-    plt.ylabel("Y (cm)")
+    plt.xlabel("Y (cm)")
+    plt.ylabel("Z (cm)")
 
     # plt.imshow(data,vmin=-0.1, vmax=0.1, cmap='seismic')
     plt.colorbar()
