@@ -144,27 +144,43 @@ void print_start_info(Dimensions dimensions) {
     printf("-----------------------------------\n\n");
 }
 
-Coords PositionToCoords(Position p, Dimensions d) {
+Coords PositionToCoords(Position p, Dimensions d, Position source) {
     real_t dh = d.dh;
+    const int_t Nx = d.Nx;
+    const int_t Ny = d.Ny;
+    const int_t padding = d.padding;
 
+    // Calculate the simulation domain center in world coordinates (centered around source)
+    const real_t sim_center_x = source.x;
+    const real_t sim_center_y = source.y;
+    
+    // Convert absolute world position to grid-relative position
+    // Grid origin (0,0,0) corresponds to (source - half_domain_size) in world space
+    // So position source.x maps to grid coordinate Nx/2
+    const real_t relative_x = p.x - sim_center_x;
+    const real_t relative_y = p.y - sim_center_y;
+    const real_t relative_z = p.z;
+
+    // Convert to grid coordinates (grid center is at Nx/2 + padding)
     Coords coords;
-    coords.x = p.x / dh;
-    coords.y = p.y / dh;
-    coords.z = p.z / dh;
+    coords.x = (int_t)(relative_x / dh + Nx / 2.0 + padding);
+    coords.y = (int_t)(relative_y / dh + Ny / 2.0 + padding);
+    coords.z = (int_t)(relative_z / dh);
+    
     if(coords.x < 0 || coords.x >= 2 * d.padding + d.Nx || coords.y < 0
        || coords.y >= 2 * d.padding + d.Ny || coords.z < 0 || coords.z >= 2 * d.padding + d.Nz) {
-        fprintf(stderr, "Error: Coordinates out of bounds.\n");
+        fprintf(stderr, "Error: Coordinates (%f, %f, %f) out of bounds.\n", p.x, p.y, p.z);
         coords.x = coords.y = coords.z = -1; // Set to invalid values
     }
     return coords;
 }
 
 // computes the number of iterations for a round trip time, assuming worst case model traversal
-real_t RTT(double *model, OPTIONS options) {
+real_t RTT(double *model, OPTIONS *options, simulation_parameters *p) {
     // need to get how much is plastic, how much is water.
-    real_t z_total = options.sim_Lz;
+    real_t z_total = options->sim_Lz;
 
-    real_t model_start = options.sensor.z;
+    real_t model_start = options->transducer_height;
     real_t model_shallowest_end = model_start + MODEL_LZ;
     real_t model_deepest_end = model_start;
 
@@ -172,15 +188,24 @@ real_t RTT(double *model, OPTIONS options) {
     // wave travels faster in the plastic, so the worst case is when it goes through the shallowest
     // part
     real_t increment = 0.001; // 1mm increment
-    for(real_t x = options.sensor.x - options.sim_Lx / 2.0;
-        x <= options.sensor.x + options.sim_Lx / 2.0;
+    for(real_t x = (p->sensors[0].x) - options->sim_Lx / 2.0;
+        x <= (p->sensors[0].x) + options->sim_Lx / 2.0;
         x += increment) {
-        for(real_t y = options.sensor.y - options.sim_Ly / 2.0;
-            y <= options.sensor.y + options.sim_Ly / 2.0;
+        for(real_t y = p->sensors[0].y - options->sim_Ly / 2.0;
+            y <= p->sensors[0].y + options->sim_Ly / 2.0;
             y += increment) {
-
+            // Clamp x and y to valid model bounds
+            if(x < 0 || x >= MODEL_LX || y < 0 || y >= MODEL_LY) {
+                continue; // Skip out-of-bounds positions
+            }
+            
             const int_t x_idx = x * MODEL_NX / MODEL_LX;
             const int_t y_idx = y * MODEL_NY / MODEL_LY;
+            
+            // Safety check: ensure indices are within bounds
+            if(x_idx < 0 || x_idx >= MODEL_NX || y_idx < 0 || y_idx >= MODEL_NY) {
+                continue;
+            }
 
             const real_t model_depth =
                 model_start + MODEL_LZ + (double) model[x_idx * MODEL_NY + y_idx];
@@ -215,7 +240,7 @@ real_t RTT(double *model, OPTIONS options) {
         distance_in_plastic / PLASTIC_PARAMETERS.k + distance_in_water / WATER_PARAMETERS.k;
     // horoizontal travel approx, supposed proportional to vertical
     real_t horizontal_travel_time =
-        0.5 * vertical_travel_time * max(options.sim_Lx, options.sim_Ly) / options.sim_Lz;
+        0.5 * vertical_travel_time * max(options->sim_Lx, options->sim_Ly) / options->sim_Lz;
 
     real_t emissions_latency = 3.125e-5; // 250 samples at 8Mhz
     real_t safety_latency = 5 * emissions_latency;

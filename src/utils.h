@@ -27,14 +27,14 @@ void print_progress_bar(int current_iteration,
                         int total_iterations,
                         struct timeval start,
                         struct timeval now);
-Coords PositionToCoords(Position p, Dimensions d);
+Coords PositionToCoords(Position p, Dimensions d, Position source);
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 void print_start_info(Dimensions dimensions);
-real_t RTT(double *model, OPTIONS options);
+real_t RTT(double *model, OPTIONS *options, simulation_parameters *p);
 
 #ifdef __cplusplus
 }

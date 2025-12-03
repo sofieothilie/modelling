@@ -3,6 +3,7 @@
 
 #include <getopt.h>
 #include <memory.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,8 @@ OPTIONS
      */
 
     real_t sim_Lx = 0.01, sim_Ly = 0.01, sim_Lz = 0.01;
-    Position sensor = { 0, 0, -0.1 };
+    real_t transducer_height = 0.023;
+    int n_sensors = 0; /* start empty; read_universe will fill if provided */
     real_t dt = 1e-8;
     real_t ppw = 10;
     int_t max_iteration = 50;
@@ -22,26 +24,29 @@ OPTIONS
     int_t snapshot_frequency = 10;
     int_t print_info = 0;
     int_t RTM = 0;
+    Position *sensors = NULL;
+
 
     static struct option const long_options[] = {
         { "help", no_argument, 0, '?' },
         { "simul_x", required_argument, 0, 'x' },
         { "simul_y", required_argument, 0, 'y' },
         { "simul_z", required_argument, 0, 'z' },
+        { "meta-file", required_argument, 0, 'm' },
         { "ppw", required_argument, 0, 'p' },
         { "padding", required_argument, 0, 'P' },
         { "dt", required_argument, 0, 't' },
         { "max_iteration", required_argument, 0, 'i' },
         { "snapshot_frequency", required_argument, 0, 's' },
         { "print-info", no_argument, 0, 'I' },
-        { "sensor_x", required_argument, 0, 'X' },
-        { "sensor_y", required_argument, 0, 'Y' },
-        { "sensor_z", required_argument, 0, 'Z' },
         { 0, 0, 0, 0 },
         { "RTM", no_argument, 0, 'R' },
     };
 
-    static char const *short_options = "?x:y:z:p:P:t:i:s:I:X:Y:Z:R:";
+    static char const *short_options = "?x:y:z:p:P:t:i:s:I:m:R:";
+        /* fixed-size meta path in binary meta format */
+        #define META_PATH_FIELD_SIZE 256
+    char *meta_path_opt = NULL; /* parsed by getopt if -m/--meta-file is used */
     {
         char *endptr;
         int c;
@@ -70,27 +75,6 @@ OPTIONS
                 case 'z':
                     sim_Lz = strtod(optarg, &endptr);
                     if(endptr == optarg || sim_Lz < 0) {
-                        help(argv[0], c, optarg);
-                        return NULL;
-                    }
-                    break;
-                case 'X':
-                    sensor.x = strtod(optarg, &endptr);
-                    if(endptr == optarg) {
-                        help(argv[0], c, optarg);
-                        return NULL;
-                    }
-                    break;
-                case 'Y':
-                    sensor.y = strtod(optarg, &endptr);
-                    if(endptr == optarg) {
-                        help(argv[0], c, optarg);
-                        return NULL;
-                    }
-                    break;
-                case 'Z':
-                    sensor.z = strtod(optarg, &endptr);
-                    if(endptr == optarg) {
                         help(argv[0], c, optarg);
                         return NULL;
                     }
@@ -140,6 +124,26 @@ OPTIONS
                     printf("caught an I\n");
                     print_info = 1;
                     break;
+                case 'm':
+                    /* copy -m/--meta-file argument for later */
+                    if(optarg) {
+                        /* validate length immediately at parse time */
+                        if(strlen(optarg) >= META_PATH_FIELD_SIZE) {
+                            fprintf(stderr,
+                                    "error: meta-path '%s' is too long (%zu bytes) — max %d bytes allowed\n",
+                                    optarg, strlen(optarg), META_PATH_FIELD_SIZE - 1);
+                            return NULL;
+                        }
+
+                        /* replace existing value if present */
+                        if(meta_path_opt) free(meta_path_opt);
+                        meta_path_opt = strdup(optarg);
+                        if(!meta_path_opt) {
+                            perror("strdup");
+                            return NULL;
+                        }
+                    }
+                    break;
                 case 'R':
                     RTM = strtol(optarg, &endptr, 10);
                     break;
@@ -149,11 +153,18 @@ OPTIONS
         }
     }
 
-    if(argc < (optind)) {
-        printf("argc/optind: %d/%d\n", argc, optind);
-
-        help(argv[0], ' ', "Not enough arugments");
-        return NULL;
+    /* determine final meta_path (option takes precedence over positional) */
+    char *meta_path = NULL;
+    if(meta_path_opt) {
+        meta_path = meta_path_opt; /* use provided -m value */
+    } else if(optind < argc) {
+        /* positional argument provided; copy then validate below */
+        meta_path = strdup(argv[optind]);
+        if(!meta_path) {
+            perror("strdup");
+            if(meta_path_opt) free(meta_path_opt);
+            return NULL;
+        }
     }
 
     OPTIONS *args_parsed = malloc(sizeof(OPTIONS));
@@ -166,8 +177,11 @@ OPTIONS
     args_parsed->padding = padding;
     args_parsed->max_iteration = max_iteration;
     args_parsed->snapshot_frequency = snapshot_frequency;
-    args_parsed->sensor = sensor;
+    args_parsed->sensors = sensors;
     args_parsed->RTM = RTM;
+    args_parsed->n_sensors = n_sensors;
+    args_parsed->transducer_height = transducer_height;
+    args_parsed->meta_path = meta_path;
 
     return args_parsed;
 }

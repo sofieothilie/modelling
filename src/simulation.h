@@ -53,10 +53,13 @@ typedef struct {
     real_t *model_data;
     Dimensions dimensions;
     real_t sim_Lx, sim_Ly, sim_Lz;
-    Position sensor;
     real_t dt;
     int max_iter, snapshot_freq;
     int RTM;
+    real_t transducer_height;
+    Position source;
+    int n_sensors;
+    Position *sensors;
 } simulation_parameters;
 
 #ifdef __cplusplus
@@ -64,8 +67,8 @@ extern "C" {
 #endif
 
 int_t get_domain_size(const Dimensions dimensions);
-int simulate_wave(simulation_parameters p);
-int simulate_rtm(simulation_parameters p);
+int simulate_wave(const simulation_parameters *p);
+int simulate_rtm(const simulation_parameters *p);
 SimulationState allocate_simulation_state(const Dimensions dimensions);
 void free_simulation_state(SimulationState s);
 double *open_model(const char *filename);
@@ -91,5 +94,3 @@ void free_model(double *model);
 #define MODEL_LX 3.0
 #define MODEL_LY 1.0
 #define MODEL_LZ 0.2
-
-#define N_RECEIVERS 1

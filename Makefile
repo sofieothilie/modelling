@@ -2,12 +2,12 @@
 
 all: test
 
-SIMULATION_X = 0.02
+SIMULATION_X = 0.2
 SIMULATION_Y = 1.0
 SIMULATION_Z = 0.224#0.224
 
-SENSOR_X = 1.40223
-SENSOR_Y = 0.885
+# SENSOR_X = 1.40223
+# SENSOR_Y = 0.885
 # SENSOR_X = 2.615 #still needs to add some shift to be at the center of the receiver, like 1cm
 # SENSOR_Y = 0.494 #here also
 SENSOR_HEIGHT = 0.023
@@ -16,8 +16,9 @@ PPW = 6
 ITERATIONS = 1#unused, will be overwritten by the correct round trip time
 SNAPSHOT = 5
 PADDING = 5
-RTM = 1
-
+RTM = 0
+# META_FILE = "./data/extracted/aligned_Baseline1_mig_IF1__20D.bin"
+META_FILE = "./data/extracted/150kHz_Single_source_file.bin"
 plot: 
 	@echo "Started plotting..."
 	@python3 scripts/plot_all.py $(PPW)  $(SNAPSHOT) $(SIMULATION_X) $(SIMULATION_Y) $(SIMULATION_Z)
@@ -47,11 +48,11 @@ debug: src/argument_utils.c src/model_cli.c src/getopt.c src/memory_management.c
 run: 
 	@mkdir -p wave_data
 	@mkdir -p sensor_out
-	./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING) -R $(RTM)
+	./bin/model_cli -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING) -R $(RTM) -m $(META_FILE)
 
 #only print launch info, without running it
 info: 
-	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -X $(SENSOR_X) -Y $(SENSOR_Y) -Z $(SENSOR_HEIGHT) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
+	@./bin/model_cli --print-info -x $(SIMULATION_X) -y $(SIMULATION_Y) -z $(SIMULATION_Z) -p $(PPW) -i $(ITERATIONS) -s $(SNAPSHOT) --padding $(PADDING)
 
 save:
 	@if [ -z "$(path)" ]; then \
