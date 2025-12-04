@@ -841,8 +841,8 @@ int signature(real_t **sig_buf) {
     return (int) num_doubles;
 }
 
-int traces(real_t **trace_buf) { //simulation_parameters p, real_t **sig_buf) {
-    FILE *f = fopen("data/extracted/150kHz_Single_source_file_traces.bin", "rb");
+int traces(real_t **trace_buf, simulation_parameters *p) {
+    FILE *f = fopen(p->trace_path, "rb");
     if(!f) {
         perror("Failed to open file");
         return -1;
@@ -857,20 +857,9 @@ int traces(real_t **trace_buf) { //simulation_parameters p, real_t **sig_buf) {
     }
     rewind(f);
 
-    uint32_t n_traces, n_samples;
-    float dt;
-    fread(&n_traces, 4, 1, f);
-    fread(&n_samples, 4, 1, f);
-    fread(&dt, 4, 1, f);
-
-    printf("n_traces=%u, n_samples=%u, dt=%g\n",
-          n_traces,
-          n_samples,
-          dt);
-
-    size_t rec_bytes = (n_samples) * sizeof(float);
+    size_t rec_bytes = (p->n_samples) * sizeof(float);
     float *buf = (float *)malloc(rec_bytes);
-    *trace_buf = (real_t *) calloc(n_samples, sizeof(real_t));
+    *trace_buf = (real_t *) calloc(p->n_samples, sizeof(real_t));
 
     if(!buf) {
         perror("Failed to allocate double_buffer");
@@ -878,21 +867,12 @@ int traces(real_t **trace_buf) { //simulation_parameters p, real_t **sig_buf) {
         return -1;
     }
 
-    for (size_t i=0; i< n_traces; ++i) {
-        float s_x, s_y, g_x, g_y;
-        fread(&s_x, 4, 1, f);
-        fread(&s_y, 4, 1, f);
-        fread(&g_x, 4, 1, f);
-        fread(&g_y, 4, 1, f);
-        printf("Original source position: x=%g, y=%g, receiver position: x= %g, y=%g\n", s_x, s_y, g_x, g_y);
-        // p.sensor.x = s_x;
-        // p.sensor.y = s_y;
-        // p.receiver.x = g_x;
-        // p.receiver.y = g_y;
+    for (size_t i=0; i< p->n_traces; ++i) {
+
         size_t trace = fread(buf, 1, rec_bytes, f);
         if (trace != rec_bytes) perror("Failed to read full trace");
 
-        for(size_t i = 0; i < n_samples; i++) {
+        for(size_t i = 0; i < p->n_samples; i++) {
             (*trace_buf)[i] = (real_t) buf[i];
         }
         break; // only first trace for now
@@ -901,7 +881,7 @@ int traces(real_t **trace_buf) { //simulation_parameters p, real_t **sig_buf) {
 
     free(buf);
     fclose(f);
-    return n_samples;
+    return 0;
 }
 
 __global__ void show_sigma(Dimensions dimensions,
@@ -1019,8 +999,6 @@ extern "C" int simulate_wave(const simulation_parameters *p) {
     // read metafile to setup receiver, sensors
     // set p->n_sensors
 
-
-    const Coords source_pos = { Nx / 2, Ny / 2, 0 }; // convert from Pos to coords
 
     /* allocate receiver coords and filename storage on the heap (variable count) */
     Coords *recv_pos = (Coords *) malloc((size_t) p->n_sensors * sizeof(Coords));
@@ -1152,7 +1130,8 @@ extern "C" int simulate_wave(const simulation_parameters *p) {
 
         if(signature_idx < sig_len) {
             real_t src_value = sig[signature_idx];
-            emit_source<<<grid, block>>>(nextState.U, dimensions, src_value, source_pos);
+            Coords src_coords = PositionToCoords(p->source, dimensions, p->source);
+            emit_source<<<grid, block>>>(nextState.U, dimensions, src_value, src_coords);
         }
 
         shift_states(&currentState, &nextState);
@@ -1176,164 +1155,181 @@ extern "C" int simulate_wave(const simulation_parameters *p) {
     return 0;
 }
 
-extern "C" int simulate_rtm(const simulation_parameters *p) {
+extern "C" int simulate_rtm(simulation_parameters *p) {
     printf("Simulating RTM...\n");
 
-    // Dimensions dimensions = p.dimensions;
+    Dimensions dimensions = p->dimensions;
 
-    // const int_t Nx = dimensions.Nx;
-    // const int_t Ny = dimensions.Ny;
-    // const int_t Nz = dimensions.Nz;
-    // const int_t padding = dimensions.padding;
-    // const real_t dh = dimensions.dh;
+    const int_t Nx = dimensions.Nx;
+    const int_t Ny = dimensions.Ny;
+    const int_t Nz = dimensions.Nz;
+    const int_t padding = dimensions.padding;
+    const real_t dh = dimensions.dh;
 
-    // if(!init_cuda()) {
-    //     fprintf(stderr, "Could not initialize CUDA\n");
-    //     exit(EXIT_FAILURE);
-    // }
+    if(!init_cuda()) {
+        fprintf(stderr, "Could not initialize CUDA\n");
+        exit(EXIT_FAILURE);
+    }
 
-    // SimulationState currentState = allocate_simulation_state(dimensions);
-    // SimulationState intermediateState = allocate_simulation_state(dimensions);
-    // SimulationState nextState = allocate_simulation_state(dimensions);
-
-
-    // const real_t dt = p.dt;
-    // const int_t max_iteration = p.max_iter;
-    // const int_t snapshot_freq = p.snapshot_freq;
-
-    // const Coords source_pos ={ Nx / 2, Ny / 2, 0 }; // also must be updated
-    // Coords recv_pos[N_RECEIVERS];
-
-    // const char *sensor_filename[N_RECEIVERS];
-
-    // printf("given sensor y %lf\n", p.sensor.y);
-
-    // // the simulation is centered around the source. One middle receiver is also the source, so I
-    // // need to know its index
-    // const int_t central_rcv_index = 13;
-    // const real_t sensor_spacing_y = 0.033;
-    // for(int_t i = 0; i < N_RECEIVERS; i++) {
-    //     real_t sim_center_y = Ny / 2.0 * dh;
-    //     real_t sensor_y = sim_center_y - (central_rcv_index - i) * sensor_spacing_y;
-    //     int_t sensor_sim_y_idx = sensor_y / dh;
-    //     printf("saving pos %d at (%d,%d,%d)\n", i, 0, sensor_sim_y_idx, 0);
-    //     recv_pos[i] = { Nx / 2, sensor_sim_y_idx, 0 };
-    //     printf("sensor[%d].y=%lf\n", i, p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
-
-    //     static char tmp[N_RECEIVERS][50];
-
-    //     sprintf(tmp[i],
-    //             "sensor_out/sensor_%.2lf_%.2lfd.dat",
-    //             p.sensor.x,
-    //             p.sensor.y - (central_rcv_index - i) * sensor_spacing_y);
-    //     sensor_filename[i] = tmp[i];
-
-    //     // overwrite last output file, to not append to it.
-    //     FILE *f = fopen(sensor_filename[i], "w");
-    //     fclose(f);
-    //     f = NULL;
-    // }
-
-    // Coords *d_sensor_coords = NULL;
-    // cudaMalloc(&d_sensor_coords, N_RECEIVERS * sizeof(Coords));
-    // cudaMemcpy(d_sensor_coords, recv_pos, sizeof(Coords) * N_RECEIVERS, cudaMemcpyHostToDevice);
-
-    // // contains the value at the sensor, will be copied from the gpu every iteration, and written to
-    // // file.
-    // real_t *d_current_value_at_sensor;
-
-    // cudaMalloc(&d_current_value_at_sensor, N_RECEIVERS * sizeof(real_t));
-
-    // double *model = open_model("data/model.bin");
-
-    // // for  now we put it in global  mem, but if we can  have it small enough (especially the 3d
-    // // one, put it in constant memory)
-    // // we  can crop on the  simulation space only
-    // const Position sensor = p.sensor;
-
-    // double *d_model = NULL;
-    // cudaErrorCheck(cudaMalloc(&d_model, MODEL_NX * MODEL_NY * sizeof(double)));
-    // cudaErrorCheck(
-    //     cudaMemcpy(d_model, model, MODEL_NX * MODEL_NY * sizeof(double), cudaMemcpyHostToDevice));
-
-    // real_t *trace;
-    // struct timeval start, end;
-
-    // int trace_len = traces(&trace);//, &start, &end); //p, &trace);
+    SimulationState currentState = allocate_simulation_state(dimensions);
+    SimulationState intermediateState = allocate_simulation_state(dimensions);
+    SimulationState nextState = allocate_simulation_state(dimensions);
 
 
-    // show_model(dimensions, model, sensor);
+    const real_t dt = p->dt;
+    const int_t max_iteration = p->max_iter;
+    const int_t snapshot_freq = p->snapshot_freq;
 
-    // gettimeofday(&start, NULL);
-    // printf("Started simulation...\n");
+    /* allocate receiver coords and filename storage on the heap (variable count) */
+    Coords *recv_pos = (Coords *) malloc((size_t) p->n_sensors * sizeof(Coords));
+    if(!recv_pos && p->n_sensors > 0) {
+        fprintf(stderr, "simulate_rtm: failed to allocate recv_pos for %d sensors\n", p->n_sensors);
+        return -1;
+    }
+
+    const char **sensor_filename = (const char **) malloc((size_t) p->n_sensors * sizeof(const char *));
+    if(!sensor_filename && p->n_sensors > 0) {
+        fprintf(stderr, "simulate_rtm: failed to allocate sensor_filename pointers for %d sensors\n", p->n_sensors);
+        free(recv_pos);
+        return -1;
+    }
+
+    /* allocate contiguous string buffer for filenames */
+    const size_t FN_SLOT = 128;
+    char *tmpbuf = NULL;
+    if(p->n_sensors > 0) {
+        tmpbuf = (char *) malloc((size_t) p->n_sensors * FN_SLOT);
+        if(!tmpbuf) {
+            fprintf(stderr, "simulate_wave: failed to allocate tmpbuf for %d sensors\n", p->n_sensors);
+            free(recv_pos);
+            free(sensor_filename);
+            return -1;
+        }
+    }
+    for(int_t i = 0; i < p->n_sensors; i++) {
+  
+        // convert from position to coords for each sensor
+
+        /* put a debugging/logging message showing the mapping */
+
+        // //coords
+         /* convert each Position into integer coordinates in the simulation grid */
+        recv_pos[i] = PositionToCoords(p->sensors[i], dimensions, p->source);
+
+        /* prepare filename --- put x,y coords in the name so it's human-readable */
+        char *slot = tmpbuf ? tmpbuf + (i * FN_SLOT) : NULL;
+        if(slot) {
+            snprintf(slot, FN_SLOT, "sensor_out/sensor_%.2lf_%.2lf.dat", p->sensors[i].x, p->sensors[i].y);
+            sensor_filename[i] = slot;
+
+            /* overwrite last output file to avoid appending */
+            FILE *f = fopen(sensor_filename[i], "w");
+            if(f) fclose(f);
+        } else {
+            sensor_filename[i] = NULL;
+        }
+    }
+
+    Coords *d_sensor_coords = NULL;
+    cudaMalloc(&d_sensor_coords, p->n_sensors * sizeof(Coords));
+    cudaMemcpy(d_sensor_coords, recv_pos, sizeof(Coords) * p->n_sensors, cudaMemcpyHostToDevice);
+
+    // contains the value at the sensor, will be copied from the gpu every iteration, and written to
+    // file.
+    real_t *d_current_value_at_sensor;
+
+    cudaMalloc(&d_current_value_at_sensor, p->n_sensors * sizeof(real_t));
+
+    double *model = open_model("data/model.bin");
+
+    // for  now we put it in global  mem, but if we can  have it small enough (especially the 3d
+    // one, put it in constant memory)
+    // we  can crop on the  simulation space only
+
+    double *d_model = NULL;
+    cudaErrorCheck(cudaMalloc(&d_model, MODEL_NX * MODEL_NY * sizeof(double)));
+    cudaErrorCheck(
+        cudaMemcpy(d_model, model, MODEL_NX * MODEL_NY * sizeof(double), cudaMemcpyHostToDevice));
+
+    real_t *trace;
+    struct timeval start, end;
+
+    traces(&trace, p);
+
+
+    show_model(dimensions, model, p->source);
+
+    gettimeofday(&start, NULL);
+    printf("Started simulation...\n");
     
-    // int n_stored_samples = trace_len;
-    // for(int_t iteration = max_iteration-1; iteration >= 0; iteration--) {
-    //     cudaDeviceSynchronize(); // is it necessary ?
-    //     gettimeofday(&end, NULL);
-    //     print_progress_bar((max_iteration - iteration), max_iteration, start, end);
-    //     if((iteration % snapshot_freq) == 0) {
-    //         domain_save(currentState.U, dimensions);
-    //     }
+    int n_stored_samples = p->n_traces;
+    for(int_t iteration = max_iteration-1; iteration >= 0; iteration--) {
+        cudaDeviceSynchronize(); // is it necessary ?
+        gettimeofday(&end, NULL);
+        print_progress_bar((max_iteration - iteration), max_iteration, start, end);
+        if((iteration % snapshot_freq) == 0) {
+            domain_save(currentState.U, dimensions);
+        }
 
-    //     // when is next samples supposed to be ?
-    //     real_t next_sample_time = (double) n_stored_samples / SAMPLE_RATE; //updated for rtm
-    //     if(iteration * dt <= next_sample_time) { //update for rtm, when to store samples
-    //         n_stored_samples--;
-    //         get_sensor_value<<<1, 1>>>(currentState,
-    //                                    d_current_value_at_sensor,
-    //                                    dimensions,
-    //                                    d_sensor_coords);
+        // when is next samples supposed to be ?
+        real_t next_sample_time = (double) n_stored_samples / SAMPLE_RATE; //updated for rtm
+        if(iteration * dt <= next_sample_time) { //update for rtm, when to store samples
+            n_stored_samples--;
+            get_sensor_value<<<1, 1>>>(currentState,
+                                       d_current_value_at_sensor,
+                                       dimensions,
+                                       d_sensor_coords, p->n_sensors);
 
-    //         cudaDeviceSynchronize();
-    //         append_value_to_files(sensor_filename, d_current_value_at_sensor);
-    //     }
+            cudaDeviceSynchronize();
+            append_value_to_files(sensor_filename, d_current_value_at_sensor, p->n_sensors);
+        }
 
-    //     RK4_step_lowstorage(currentState,
-    //                         intermediateState,
-    //                         nextState,
-    //                         dimensions,
-    //                         d_model,
-    //                         sensor);
-    //     cudaError_t err = cudaGetLastError();
-    //     if(err != cudaSuccess) {
-    //         printf("cuda kernel error: %s\n", cudaGetErrorString(err));
-    //         exit(EXIT_FAILURE);
-    //     }
+        RK4_step_lowstorage(currentState,
+                            intermediateState,
+                            nextState,
+                            dimensions,
+                            d_model,
+                            p->source);
+        cudaError_t err = cudaGetLastError();
+        if(err != cudaSuccess) {
+            printf("cuda kernel error: %s\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
 
-    //     int trace_idx = (int) (iteration * dt * SAMPLE_RATE);
+        int trace_idx = (int) (iteration * dt * SAMPLE_RATE);
 
-    //     int block_x = 8;
-    //     int block_y = 8;
-    //     int block_z = 8;
-    //     dim3 block(block_x, block_y, block_z);
-    //     dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
-    //               (Ny + 2 * padding + block_y - 1) / block_y,
-    //               ((Nz + 2 * padding) + block_z - 1) / block_z);
+        int block_x = 8;
+        int block_y = 8;
+        int block_z = 8;
+        dim3 block(block_x, block_y, block_z);
+        dim3 grid((Nx + 2 * padding + block_x - 1) / block_x,
+                  (Ny + 2 * padding + block_y - 1) / block_y,
+                  ((Nz + 2 * padding) + block_z - 1) / block_z);
 
-    //     if(trace_idx < trace_len) {
-    //         real_t src_value = trace[trace_idx];
-    //         emit_source<<<grid, block>>>(nextState.U, dimensions, src_value, source_pos);
-    //     }
+        if(trace_idx < p->n_samples) {
+            real_t src_value = trace[trace_idx];
+            Coords src_coords = PositionToCoords(p->source, dimensions, p->source);
+            emit_source<<<grid, block>>>(nextState.U, dimensions, src_value, src_coords);
+        }
 
-    //     shift_states(&currentState, &nextState);
+        shift_states(&currentState, &nextState);
 
-    // }
-    // cudaDeviceSynchronize();
+    }
+    cudaDeviceSynchronize();
 
-    // get_sensor_value<<<1, 1>>>(currentState,
-    //                            d_current_value_at_sensor,
-    //                            dimensions,
-    //                            d_sensor_coords);
-    // append_value_to_files(sensor_filename, d_current_value_at_sensor);
+    get_sensor_value<<<1, 1>>>(currentState,
+                               d_current_value_at_sensor,
+                               dimensions, d_sensor_coords,
+                               p->n_sensors);
+    append_value_to_files(sensor_filename, d_current_value_at_sensor, p->n_sensors);
 
-    // free_simulation_state(currentState);
-    // free_simulation_state(intermediateState);
-    // free_simulation_state(nextState);
+    free_simulation_state(currentState);
+    free_simulation_state(intermediateState);
+    free_simulation_state(nextState);
 
-    // free_model(model);
-    // free(trace);
-    // cudaFree(d_model);
+    free_model(model);
+    free(trace);
+    cudaFree(d_model);
 
     return 0;
 }

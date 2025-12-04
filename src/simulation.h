@@ -59,7 +59,10 @@ typedef struct {
     real_t transducer_height;
     Position source;
     int n_sensors;
+    int n_traces;
+    int n_samples;
     Position *sensors;
+    char *trace_path;
 } simulation_parameters;
 
 #ifdef __cplusplus
@@ -68,7 +71,7 @@ extern "C" {
 
 int_t get_domain_size(const Dimensions dimensions);
 int simulate_wave(const simulation_parameters *p);
-int simulate_rtm(const simulation_parameters *p);
+int simulate_rtm(simulation_parameters *p);
 SimulationState allocate_simulation_state(const Dimensions dimensions);
 void free_simulation_state(SimulationState s);
 double *open_model(const char *filename);

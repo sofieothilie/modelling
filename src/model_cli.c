@@ -2,6 +2,7 @@
 #include "simulation.h"
 #include "utils.h"
 #include <math.h>
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -13,7 +14,7 @@
  * and sets options->n_sensors accordingly.
  * Returns uint32_t number of sources found in the universe. On error, returns -1.
  */
-uint32_t read_universe(FILE *f) {
+uint32_t read_universe(FILE *f, simulation_parameters *p) {
     /* meta header layout */
     /* As of now, these are not used for the simulation. Hehe, buuut idk. Maybe the future holds for different things.
     */
@@ -30,9 +31,13 @@ uint32_t read_universe(FILE *f) {
     if(fread(&n_sources, sizeof(n_sources), 1, f) != 1) return -1;
 
     printf("n_samples: %i\n", n_samples);
+    p->n_samples = n_samples;
     printf("n_traces: %i\n", n_traces);
+    p->n_traces = n_traces;
     printf("dt: %f\n", dt);
     printf("data_path: %s\n", data_path);
+    p->trace_path = malloc(strlen(data_path) + 1);
+    strcpy(p->trace_path, data_path);
     printf("n_sources: %i\n", n_sources);
     // Return number of sources to know how many times to call read_world
     return n_sources;
@@ -157,7 +162,7 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    uint32_t n_sources = read_universe(f);
+    uint32_t n_sources = read_universe(f, &p);
     if (n_sources == (uint32_t)-1) {
         printf("Failed to read universe from meta file.\n");
         fclose(f);
@@ -175,8 +180,15 @@ int main(int argc, char **argv) {
         printf("using %lf iterations\n", RTT_n_iteration);
 
         if (options->RTM) {
-            // int err = simulate_rtm(&p);
-            printf("RTM not implemented yet.\n");
+            simulation_parameters rtm_p = p;
+            for (int j = 0; j < p.n_sensors; j++) {
+                // swap source and sensor for RTM
+                rtm_p.source = p.sensors[j];
+                rtm_p.sensors[0] = p.source;
+                rtm_p.n_sensors = 1;
+                int err = simulate_rtm(&rtm_p);
+                break; // only simulate first sensor for now
+            }
         }
         else {
             int err = simulate_wave(&p);

@@ -203,8 +203,7 @@ for p in paths:
                 df.write(traces[i].astype('<f4').tobytes())
 
     # write single meta file describing the dataset and the source blocks
-    rel_data_path = os.path.relpath(data_file, out_dir)
-    output_meta["data"] = rel_data_path
+    output_meta["data"] = data_file
     output_meta["n_sources"] = int(len(groups))
 
     meta_bin_file = os.path.join(out_dir, f"{name}.bin")
@@ -215,7 +214,7 @@ for p in paths:
         bf.write(struct.pack('<f', float(dt)))
 
         # path field: fixed bytes
-        path_bytes = rel_data_path.encode('utf-8')
+        path_bytes = data_file.encode('utf-8')
         if len(path_bytes) >= META_PATH_FIELD_SIZE:
             print(f"  WARNING: data path too long ({len(path_bytes)} bytes) — truncating to {META_PATH_FIELD_SIZE} bytes")
             path_bytes = path_bytes[:META_PATH_FIELD_SIZE-1]
